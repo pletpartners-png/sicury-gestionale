@@ -18,23 +18,24 @@
 
 /* ---------- tema chiaro (predefinito) ---------- */
 :root{
-  --fondo:#F2F5F9;
+  --fondo:#F1F5FB;
   --superficie:#FFFFFF;
-  --superficie2:#F8FAFC;
+  --superficie2:#F7FAFE;
   --rilievo:0 1px 2px rgba(13,24,38,.06), 0 6px 18px -8px rgba(13,24,38,.14);
   --rilievo-alto:0 2px 6px rgba(13,24,38,.08), 0 18px 40px -14px rgba(13,24,38,.26);
 
-  --inchiostro:#0D1826;
-  --smorzato:#5C6E85;
-  --tenue:#8496AC;
-  --linea:#DCE4ED;
-  --linea-tenue:#EAEFF5;
+  --inchiostro:#0A1326;
+  --smorzato:#5A6B86;
+  --tenue:#8294AE;
+  --linea:#DAE2EF;
+  --linea-tenue:#E9EFF8;
 
-  --marchio:#12294B;
+  /* stesso impianto del sito: cobalto dello smalto per le azioni, cromo per i dettagli */
+  --marchio:#3D6CF5;
   --marchio-cont:#FFFFFF;
-  --oro:#9A6C0C;
-  --oro-pieno:#F2B33D;
-  --oro-velo:#FDF3E0;
+  --oro:#2A50C9;
+  --oro-pieno:#3D6CF5;
+  --oro-velo:#EAF0FE;
 
   --ok:#0F7A50;    --ok-velo:#E4F4EC;
   --att:#8F5C05;   --att-velo:#FCF0DC;
@@ -48,23 +49,23 @@
 /* ---------- tema scuro ---------- */
 @media (prefers-color-scheme: dark){
   :root:not([data-tema="chiaro"]){
-    --fondo:#080F19;
-    --superficie:#101B2B;
-    --superficie2:#152338;
+    --fondo:#070D1E;
+    --superficie:#0E1A33;
+    --superficie2:#142242;
     --rilievo:0 1px 2px rgba(0,0,0,.4);
     --rilievo-alto:0 20px 50px -16px rgba(0,0,0,.7);
 
-    --inchiostro:#E9EFF6;
-    --smorzato:#90A3BC;
-    --tenue:#657994;
-    --linea:#22344A;
-    --linea-tenue:#1A2939;
+    --inchiostro:#EEF2F8;
+    --smorzato:#93A4C4;
+    --tenue:#6B7E9E;
+    --linea:#1E2E50;
+    --linea-tenue:#17243F;
 
-    --marchio:#F2B33D;
-    --marchio-cont:#10203A;
-    --oro:#F2B33D;
-    --oro-pieno:#F2B33D;
-    --oro-velo:#20293A;
+    --marchio:#3D6CF5;
+    --marchio-cont:#FFFFFF;
+    --oro:#C9D3E0;
+    --oro-pieno:#3D6CF5;
+    --oro-velo:#15233F;
 
     --ok:#54C795;    --ok-velo:#10251C;
     --att:#EAA53F;   --att-velo:#26200F;
@@ -72,21 +73,21 @@
   }
 }
 :root[data-tema="scuro"]{
-  --fondo:#080F19;
-  --superficie:#101B2B;
-  --superficie2:#152338;
+  --fondo:#070D1E;
+  --superficie:#0E1A33;
+  --superficie2:#142242;
   --rilievo:0 1px 2px rgba(0,0,0,.4);
   --rilievo-alto:0 20px 50px -16px rgba(0,0,0,.7);
-  --inchiostro:#E9EFF6;
-  --smorzato:#90A3BC;
-  --tenue:#657994;
-  --linea:#22344A;
-  --linea-tenue:#1A2939;
-  --marchio:#F2B33D;
-  --marchio-cont:#10203A;
-  --oro:#F2B33D;
-  --oro-pieno:#F2B33D;
-  --oro-velo:#20293A;
+  --inchiostro:#EEF2F8;
+  --smorzato:#93A4C4;
+  --tenue:#6B7E9E;
+  --linea:#1E2E50;
+  --linea-tenue:#17243F;
+  --marchio:#3D6CF5;
+  --marchio-cont:#FFFFFF;
+  --oro:#C9D3E0;
+  --oro-pieno:#3D6CF5;
+  --oro-velo:#15233F;
   --ok:#54C795;    --ok-velo:#10251C;
   --att:#EAA53F;   --att-velo:#26200F;
   --all:#E97268;   --all-velo:#2A1614;
@@ -111,7 +112,7 @@ button,input,select{ font-family:inherit; font-size:inherit; color:inherit; }
 
 /* ---------- fascia di avviso ---------- */
 .avviso{
-  background:var(--oro-pieno); color:#12203A; text-align:center; padding:6px 16px;
+  background:var(--marchio); color:#fff; text-align:center; padding:6px 16px;
   font-family:var(--mono); font-size:.66rem; letter-spacing:.11em; text-transform:uppercase;
 }
 
@@ -618,12 +619,12 @@ var MANSIONI = [
    Ogni azienda imposta i propri da Configurazione. Questi sono solo di partenza. */
 function codiciDiPartenza(){
   return [
-    { id:'A', et:'Alba',       ini:'05:30', fin:'09:00', col:'#C77A2E' },
-    { id:'M', et:'Mattina',    ini:'06:00', fin:'14:00', col:'#B8860B' },
+    { id:'A', et:'Alba',       ini:'05:30', fin:'09:00', col:'#4E8FD6' },
+    { id:'M', et:'Mattina',    ini:'06:00', fin:'14:00', col:'#3D6CF5' },
     { id:'G', et:'Giornata',   ini:'09:00', fin:'18:00', col:'#1E7A63' },
-    { id:'P', et:'Pomeriggio', ini:'14:00', fin:'22:00', col:'#2E5E8C' },
-    { id:'N', et:'Notte',      ini:'22:00', fin:'06:00', col:'#5C4B9E' },
-    { id:'R', et:'Riposo',     ini:'',      fin:'',      col:'#8496AC' }
+    { id:'P', et:'Pomeriggio', ini:'14:00', fin:'22:00', col:'#2A50C9' },
+    { id:'N', et:'Notte',      ini:'22:00', fin:'06:00', col:'#4A4FA8' },
+    { id:'R', et:'Riposo',     ini:'',      fin:'',      col:'#8294AE' }
   ];
 }
 function codici(){ return D.codici || codiciDiPartenza(); }
@@ -757,7 +758,7 @@ function dataBreve(iso){ var d = new Date(iso+'T00:00:00'); return GIORNI[d.getD
 function esc(s){ return String(s).replace(/&(?!\w+;)/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 /* pastiglia con le iniziali, colore stabile per persona */
-var COLORI = ['#2E5E8C','#7A4F9E','#1E7A63','#9B5B2A','#8C3A55','#3B6E4B','#5C4B9E','#8A6410'];
+var COLORI = ['#2E5E8C','#4A4FA8','#1E6E7A','#5B5F8C','#3D6CF5','#2F6E6E','#5C4B9E','#36507F'];
 function iniziali(nome){ return nome.split(' ').map(function(p){ return p[0]; }).join('').slice(0,2).toUpperCase(); }
 function tinta(nome){ var n = 0; for (var i=0;i<nome.length;i++) n = (n*31 + nome.charCodeAt(i)) >>> 0; return COLORI[n % COLORI.length]; }
 function avatar(nome, grande){
