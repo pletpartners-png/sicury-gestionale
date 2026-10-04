@@ -514,10 +514,35 @@ td small{ display:block; color:var(--smorzato); font-size:.78rem; }
 /* ---------- telefono: le tabelle strette si adattano invece di scorrere ----------
    Solo la griglia di pianificazione resta scorrevole: e' larga per natura. */
 @media (max-width:620px){
-  .tabellone table:not(.griglia){ min-width:0; }
-  .tabellone table:not(.griglia) th,
-  .tabellone table:not(.griglia) td{ padding:10px 12px; }
-  .tabellone table:not(.griglia) .b--min{ padding:5px 9px; font-size:.74rem; white-space:nowrap; }
+  .tabellone:not(.tabellone--griglia){ overflow-x:visible; }
+  .tabellone table:not(.griglia){ min-width:0; width:100%; border:0; }
+  .tabellone table:not(.griglia) thead{ position:absolute; width:1px; height:1px;
+    overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+  .tabellone table:not(.griglia) tbody tr{
+    display:block; padding:12px 0; border-bottom:1px solid var(--linea-tenue); }
+  .tabellone table:not(.griglia) tbody tr:last-child{ border-bottom:0; }
+  .tabellone table:not(.griglia) tbody td,
+  .tabellone table:not(.griglia) tbody th{
+    display:flex; align-items:center; justify-content:space-between; gap:14px;
+    padding:5px 0; border:0; text-align:right; white-space:normal; word-break:break-word; }
+  .tabellone table:not(.griglia) tbody td[data-etichetta]::before,
+  .tabellone table:not(.griglia) tbody th[data-etichetta]::before{
+    content:attr(data-etichetta); flex:0 0 42%; text-align:left;
+    font-size:.68rem; letter-spacing:.09em; text-transform:uppercase;
+    color:var(--tenue); font-weight:700; }
+  /* celle di sole azioni: il pulsante prende tutta la riga */
+  .tabellone table:not(.griglia) tbody td:not([data-etichetta]),
+  .tabellone table:not(.griglia) tbody th:not([data-etichetta]),
+  .tabellone table:not(.griglia) tbody td[data-etichetta=""]{
+    justify-content:flex-start; padding-top:9px; }
+  .tabellone table:not(.griglia) tbody td[data-etichetta=""]::before{ content:none; }
+  .tabellone table:not(.griglia) .b--min{ padding:7px 12px; font-size:.78rem; white-space:nowrap; }
+  .tabellone table.senza-intestazioni tbody td,
+  .tabellone table.senza-intestazioni tbody th{ justify-content:flex-start; text-align:left; }
+  /* celle con gettoni o pulsanti: vanno a capo invece di uscire dalla cella */
+  .tabellone table:not(.griglia) tbody td.cella--gettoni{
+    flex-wrap:wrap; row-gap:6px; column-gap:5px; justify-content:flex-end; }
+  .tabellone table:not(.griglia) tbody td.cella--gettoni .gio{ margin:0; }
   .p{ font-size:.58rem; padding:3px 7px; }
 }
 
@@ -699,8 +724,19 @@ function semi() {
 
   var turni = [], k = 0;
   function T(g, loc, mans, dip, ini, fin){
-    turni.push({ id:'t'+(++k), data:fra(g), location:loc, mansione:mans, dipendente:dip||null,
-                 inizio:ini, fine:fin, conferma:null, deroga:false });
+    var t = { id:'t'+(++k), data:fra(g), location:loc, mansione:mans, dipendente:dip||null,
+              inizio:ini, fine:fin, conferma:null, deroga:false };
+    // I turni gia' passati arrivano con la timbratura GPS gia' registrata,
+    // cosi il fascicolo mostra subito lo storico delle posizioni.
+    if (g < 0 && t.dipendente) {
+      var r = location.filter(function(l){ return l.id === loc; })[0].raggio;
+      var fuori = (k % 7 === 3);                       // un caso fuori area ogni tanto
+      var m = fuori ? Math.round(r * 1.7) : Math.round(r * (0.12 + (k % 5) * 0.14));
+      var mn = (Number(ini.slice(0,2)) * 60 + Number(ini.slice(3)) + (k % 9) - 4 + 1440) % 1440;
+      t.conferma = { ora: ('0'+Math.floor(mn/60)).slice(-2) + ':' + ('0'+(mn%60)).slice(-2),
+                     distanza: m, fuoriArea: fuori };
+    }
+    turni.push(t);
   }
   for (var g = -2; g <= 6; g++) {
     T(g, 'l1', 'guardia',    g%3===0?'d5':'d6', '06:00','14:00');
@@ -778,6 +814,14 @@ var GIORNI = ['dom','lun','mar','mer','gio','ven','sab'];
 function oggiISO(){ var d = new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0,10); }
 function giorniA(iso){ return Math.round((new Date(iso+'T00:00:00') - new Date(oggiISO()+'T00:00:00'))/86400000); }
 function dataBreve(iso){ var d = new Date(iso+'T00:00:00'); return GIORNI[d.getDay()]+' '+d.getDate()+' '+MESI[d.getMonth()]; }
+var MESI_ESTESI = ['gennaio','febbraio','marzo','aprile','maggio','giugno',
+  'luglio','agosto','settembre','ottobre','novembre','dicembre'];
+/* '2026-07' si legge 'luglio 2026' */
+function mesePerEsteso(aaaaMm){
+  var q = String(aaaaMm).split('-');
+  var i = Number(q[1]) - 1;
+  return MESI_ESTESI[i] ? MESI_ESTESI[i] + ' ' + q[0] : aaaaMm;
+}
 function esc(s){ return String(s).replace(/&(?!\w+;)/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 /* pastiglia con le iniziali, colore stabile per persona */
@@ -1000,11 +1044,26 @@ function intesta(t, s){
 }
 function dipingi(html){
   var v = document.getElementById('vista');
-  v.querySelectorAll('[data-scheda-dip]').forEach(function(b){ b.onclick = function(){ fogliaScheda(b.dataset.schedaDip); }; });
   v.innerHTML = html;
   v.querySelectorAll('.blocco, .riquadri, .turno').forEach(function(el, i){
     el.style.animationDelay = Math.min(i*45, 360) + 'ms';
     el.classList.add('entra');
+  });
+  etichettaCelle(v);
+}
+
+/* Da smartphone le tabelle si impilano: ogni cella porta davanti
+   l'intestazione della sua colonna, cosi non serve scorrere di lato. */
+function etichettaCelle(radice){
+  radice.querySelectorAll('.tabellone table:not(.griglia)').forEach(function(t){
+    var intest = [].map.call(t.querySelectorAll('thead th'), function(th){ return th.textContent.trim(); });
+    if (!intest.length) { t.classList.add('senza-intestazioni'); return; }
+    [].forEach.call(t.querySelectorAll('tbody tr'), function(tr){
+      [].forEach.call(tr.children, function(td, i){
+        if (intest[i]) td.setAttribute('data-etichetta', intest[i]);
+        if (td.querySelector('.gio, .p, .b')) td.classList.add('cella--gettoni');
+      });
+    });
   });
 }
 
@@ -1208,7 +1267,7 @@ function schedaTurni(){
         (abilitata('esporta') ? '<button class="b b--sec b--min" id="csv">Esporta</button>' : '') + '</div>' +
     '</div>' +
     legenda +
-    '<div class="blocco"><div class="tabellone"><table class="griglia"><thead><tr><th>Dipendente</th>' +
+    '<div class="blocco"><div class="tabellone tabellone--griglia"><table class="griglia"><thead><tr><th>Dipendente</th>' +
       giorni.map(function(g){
         var d = new Date(g+'T00:00:00'), we = d.getDay()===0 || d.getDay()===6;
         return '<th class="'+(g===oggiISO()?'oggi ':'')+(we?'festivo':'')+'">' +
@@ -1609,7 +1668,7 @@ function schedaFascicolo(d){
       '<button class="b b--pri b--min" data-carica-ced="'+d.id+'">Carica cedolino</button></div>' +
       (ced.length ? '<div class="tabellone"><table><thead><tr><th>Mese</th><th>Presa visione</th><th>Quando</th></tr></thead><tbody>' +
         ced.map(function(p){
-          return '<tr><td><b>'+p.mese+'</b></td>' +
+          return '<tr><td><b>'+mesePerEsteso(p.mese)+'</b></td>' +
                  '<td>'+(p.letto ? '<span class="p p--ok">scaricata</span>' : '<span class="p p--att">non ancora</span>')+'</td>' +
                  '<td class="num">'+(p.letto ? dataBreve(p.letto) : '&mdash;')+'</td></tr>';
         }).join('') + '</tbody></table></div>'
@@ -1753,7 +1812,7 @@ VISTE.cedolini = function(){
              '<td>'+(p.letto ? '<span class="p p--ok">scaricata</span>' : '<span class="p p--neutro">non ancora</span>')+'</td>' +
              '<td>'+(p.letto ? dataBreve(p.letto) : '&mdash;')+'</td></tr>';
     }).join('');
-    return '<div class="blocco"><div class="blocco__testa"><h2>'+m+'</h2>' +
+    return '<div class="blocco"><div class="blocco__testa"><h2>'+mesePerEsteso(m)+'</h2>' +
       '<span class="p p--'+(letti===gruppo.length?'ok':'neutro')+'">'+letti+' su '+gruppo.length+' scaricate</span></div>' +
       '<div class="tabellone"><table><thead><tr><th>Dipendente</th><th>Presa visione</th><th>Quando</th></tr></thead><tbody>'+righe+'</tbody></table></div></div>';
   }).join('');
@@ -1810,7 +1869,7 @@ VISTE.miecedolini = function(){
   var miei = D.cedolini.filter(function(p){ return p.dipendente === utente.id; }).sort(function(a,b){ return b.mese.localeCompare(a.mese); });
   dipingi('<div class="blocco"><div class="tabellone"><table><thead><tr><th>Mese</th><th>Stato</th><th></th></tr></thead><tbody>' +
     miei.map(function(p){
-      return '<tr><td><b>'+p.mese+'</b></td>' +
+      return '<tr><td><b>'+mesePerEsteso(p.mese)+'</b></td>' +
              '<td>'+(p.letto ? '<span class="p p--ok">scaricata il '+dataBreve(p.letto)+'</span>' : '<span class="p p--att">da scaricare</span>')+'</td>' +
              '<td><button class="b '+(p.letto?'b--sec':'b--pri')+' b--min" data-scarica="'+p.id+'">Scarica</button></td></tr>';
     }).join('') + '</tbody></table></div></div>');
@@ -1850,7 +1909,7 @@ function agganciaAzioni(){
 }
 
 var velo = document.getElementById('velo'), foglio = document.getElementById('foglio');
-function apri(html){ foglio.innerHTML = html; velo.hidden = false; }
+function apri(html){ foglio.innerHTML = html; etichettaCelle(foglio); velo.hidden = false; }
 function chiudi(){ velo.hidden = true; }
 velo.addEventListener('click', function(e){ if (e.target === velo) chiudi(); });
 addEventListener('keydown', function(e){ if (e.key === 'Escape') chiudi(); });
@@ -1989,7 +2048,7 @@ function fogliaCedolino(idDip){
     var err = document.getElementById('c-err');
     if (!m) { err.hidden = false; err.innerHTML = '<b>Manca il mese.</b>'; return; }
     if (D.cedolini.some(function(x){ return x.dipendente===idDip && x.mese===m; })) {
-      err.hidden = false; err.innerHTML = '<b>Cedolino gi\u00e0 presente</b> per ' + m + '.'; return; }
+      err.hidden = false; err.innerHTML = '<b>Cedolino gi\u00e0 presente</b> per ' + mesePerEsteso(m) + '.'; return; }
     D.cedolini.push({ id:'p'+m+idDip, dipendente:idDip, mese:m, letto:null });
     salva(); chiudi(); vaiA('fascicoli');
   };
@@ -2158,7 +2217,7 @@ function confermaTurno(idTurno){
 function scarica(idCed){
   var p = D.cedolini.find(function(x){ return x.id === idCed; });
   if (!p.letto) { p.letto = oggiISO(); salva(); }
-  apri('<h2>Busta paga '+p.mese+'</h2>' +
+  apri('<h2>Busta paga di '+mesePerEsteso(p.mese)+'</h2>' +
     '<p class="foglio__nota">Nel sistema definitivo qui si apre il PDF caricato dall\u2019amministrazione.</p>' +
     '<div class="campo"><span>Presa visione registrata</span><div><span class="p p--ok">'+dataBreve(p.letto)+'</span></div></div>' +
     '<div class="azioni"><button class="b b--pri" id="annulla">Chiudi</button></div>');
