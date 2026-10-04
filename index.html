@@ -520,6 +520,16 @@ td small{ display:block; color:var(--smorzato); font-size:.78rem; }
   padding:7px 10px; border-radius:6px; font-size:.86rem; }
 .rinomina:focus{ border-color:var(--oro-pieno); }
 
+/* ---------- telefono: le tabelle strette si adattano invece di scorrere ----------
+   Solo la griglia di pianificazione resta scorrevole: e' larga per natura. */
+@media (max-width:620px){
+  .tabellone table:not(.griglia){ min-width:0; }
+  .tabellone table:not(.griglia) th,
+  .tabellone table:not(.griglia) td{ padding:10px 12px; }
+  .tabellone table:not(.griglia) .b--min{ padding:5px 9px; font-size:.74rem; white-space:nowrap; }
+  .p{ font-size:.58rem; padding:3px 7px; }
+}
+
 </style>
 
 <div class="avviso">Prototipo dimostrativo &mdash; dati inventati, nessuna autenticazione reale</div>
