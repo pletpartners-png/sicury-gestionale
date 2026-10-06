@@ -1,7 +1,7 @@
 /* Sicury Turni — guscio offline.
    L'app vive tutta in una pagina e i dati stanno nel telefono: tenendo in
    cache quella pagina, il gestionale si apre anche senza rete. */
-var CACHE = 'sicury-turni-v3';
+var CACHE = 'sicury-turni-v4';
 var GUSCIO = ['./', './manifest.webmanifest',
               './icone/icona-192.png', './icone/icona-512.png',
               './icone/icona-maskable.png', './icone/apple-touch-icon.png'];
