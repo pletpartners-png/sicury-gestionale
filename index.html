@@ -927,7 +927,7 @@ function mansione(id){ return MANSIONI.find(function(m){ return m.id === id; }) 
 
 function semi() {
   var oggi = new Date(); oggi.setHours(0,0,0,0);
-  function fra(giorni){ var d = new Date(oggi); d.setDate(d.getDate()+giorni); return d.toISOString().slice(0,10); }
+  function fra(giorni){ var d = new Date(oggi); d.setDate(d.getDate()+giorni); return isoDi(d); }
 
   // contratto compatto: tipo, giorni dall'assunzione, scadenza (null = a tempo indeterminato), ore, livello
   function C(tipo, daG, aG, ore, liv){
@@ -1099,7 +1099,7 @@ function rinviaBlocco(){
   if (!sbloccato) return;
   orologioBlocco = setTimeout(function(){ blocca('inattivita'); }, MINUTI_BLOCCO * 60000);
 }
-function blocca(motivo){
+function blocca(motivo, messaggio){
   if (!sbloccato) return;
   if (utente) annota(utente.email, motivo === 'uscita' ? 'uscita' : 'blocco automatico');
   var finale = salva();
@@ -1110,10 +1110,12 @@ function blocca(motivo){
     document.getElementById('app').hidden = true;
     document.getElementById('accesso').hidden = false;
     elencoAccesso();
-    if (motivo === 'inattivita') {
+    var testo = messaggio || (motivo === 'inattivita'
+      ? '<b>Sessione chiusa</b> dopo ' + MINUTI_BLOCCO + ' minuti di inattivit&agrave;. Entra di nuovo per riprendere.'
+      : null);
+    if (testo) {
       var err = document.getElementById('l-err');
-      if (err) { err.hidden = false; err.innerHTML = '<b>Sessione chiusa</b> dopo ' + MINUTI_BLOCCO +
-        ' minuti di inattivit&agrave;. Entra di nuovo per riprendere.'; }
+      if (err) { err.hidden = false; err.innerHTML = testo; }
     }
   });
 }
@@ -1409,7 +1411,7 @@ var PASSWORD_DIPENDENTE = 'sicury2026';
 var MESI = ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
 var GIORNI = ['dom','lun','mar','mer','gio','ven','sab'];
 
-function oggiISO(){ var d = new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0,10); }
+function oggiISO(){ return isoDi(new Date()); }
 function giorniA(iso){ return Math.round((new Date(iso+'T00:00:00') - new Date(oggiISO()+'T00:00:00'))/86400000); }
 function dataBreve(iso){ var d = new Date(iso+'T00:00:00'); return GIORNI[d.getDay()]+' '+d.getDate()+' '+MESI[d.getMonth()]; }
 var MESI_ESTESI = ['gennaio','febbraio','marzo','aprile','maggio','giugno',
@@ -1879,6 +1881,175 @@ function aggiornaAvviso(){
   }
 }
 
+/* ============ copia di sicurezza ============
+   Senza un archivio centrale la copia la fa l'amministratore, quando vuole.
+   Il file contiene tutto: schede, turni, documenti e buste paga, e resta
+   cifrato con la stessa chiave dell'archivio. Si riapre solo da qui. */
+
+/* La copia deve poter rinascere altrove: su un telefono nuovo, dopo un guasto,
+   su un computer che non ha mai visto questo archivio. Per questo non si cifra
+   con la chiave del dispositivo, ma con una parola che sceglie chi la fa. E si
+   porta dentro anche le chiavi d'accesso, altrimenti al ripristino nessuno
+   potrebbe piu' entrare. */
+
+function fogliaEsporta(){
+  apri('<h2>Scarica la copia di sicurezza</h2>' +
+    '<p class="foglio__nota">La copia contiene tutto: schede, turni, documenti, buste paga e le ' +
+      'utenze di accesso. Viene cifrata con una parola che scegli ora, e con quella si riapre ' +
+      'su qualunque dispositivo.</p>' +
+    '<label class="campo"><span>Parola di protezione della copia</span>' +
+      '<input type="password" id="ex-pw" autocomplete="new-password"></label>' +
+    '<label class="campo"><span>Ripetila</span>' +
+      '<input type="password" id="ex-due" autocomplete="new-password"></label>' +
+    '<div class="nota-riga">Annotala e conservala separatamente dal file. ' +
+      'Senza quella parola la copia non si apre: non esiste un recupero.</div>' +
+    '<div class="errore" id="ex-err" hidden></div>' +
+    '<div class="azioni"><button class="b b--sec" id="annulla">Annulla</button>' +
+    '<button class="b b--pri" id="ex-ok">Scarica la copia</button></div>');
+  document.getElementById('annulla').onclick = chiudi;
+  document.getElementById('ex-ok').onclick = function(){
+    var pw = document.getElementById('ex-pw').value;
+    var due = document.getElementById('ex-due').value;
+    var err = document.getElementById('ex-err');
+    if (pw.length < LUNGHEZZA_MINIMA) {
+      err.hidden = false;
+      err.innerHTML = '<b>Troppo corta.</b> Servono almeno ' + LUNGHEZZA_MINIMA + ' caratteri.'; return; }
+    if (pw !== due) { err.hidden = false; err.innerHTML = '<b>Le due parole non coincidono.</b>'; return; }
+    var b = document.getElementById('ex-ok');
+    b.disabled = true; b.textContent = 'Preparo la copia\u2026';
+    esportaArchivio(pw).then(chiudi, function(e){
+      b.disabled = false; b.textContent = 'Scarica la copia';
+      err.hidden = false; err.innerHTML = '<b>Copia non riuscita.</b> ' + esc(e.message || '');
+    });
+  };
+}
+
+function esportaArchivio(parola){
+  var sale = b64(caso(16));
+  return conStore('readonly', function(st){ return st.getAll(); }).catch(function(){ return []; })
+    .then(function(r){
+      var file = Array.isArray(r) ? r : (r && r.result) || [];
+      return sub.exportKey('raw', DEK).then(function(chiaveGrezza){
+        return { file:file, chiave:b64(chiaveGrezza) };
+      });
+    })
+    .then(function(x){
+      var pacchetto = {
+        tipo:'sicury-copia', versione:4, quando:new Date().toISOString(), da:utente.email,
+        chiave:x.chiave,        // la chiave d'archivio, per riaprire i file
+        utenze:leggiUtenze(),   // le buste di accesso, altrimenti nessuno rientra
+        dati:D, file:x.file
+      };
+      return chiaveDaPassword(parola, sale, GIRI_PBKDF2).then(function(k){
+        return cifraTesto(k, JSON.stringify(pacchetto));
+      });
+    })
+    .then(function(pacco){
+      var nome = 'sicury-copia-' + oggiISO() + '.sicury';
+      var fatto = scaricaFile(nome, JSON.stringify({
+        tipo:'sicury-copia-cifrata', versione:4, sale:sale, giri:GIRI_PBKDF2,
+        iv:pacco.iv, dato:pacco.dato
+      }), 'application/octet-stream');
+      if (!fatto) throw new Error('Il browser non ha permesso il salvataggio del file.');
+      annota(utente.email, 'copia di sicurezza esportata');
+      return salva();
+    });
+}
+
+function fogliaRipristina(){
+  apri('<h2>Ripristina da una copia</h2>' +
+    '<div class="errore">Il ripristino <b>sostituisce tutto</b> l&rsquo;archivio di questo dispositivo, ' +
+      'comprese le utenze di accesso. Scarica prima una copia di quello che c&rsquo;&egrave; adesso.</div>' +
+    '<label class="campo"><span>File della copia</span>' +
+      '<input type="file" id="rp-file" accept=".sicury,application/octet-stream"></label>' +
+    '<label class="campo"><span>Parola di protezione della copia</span>' +
+      '<input type="password" id="rp-pw" autocomplete="off"></label>' +
+    '<p class="foglio__nota">Al termine si torna alla schermata di accesso: si rientra con le ' +
+      'password che erano in uso quando la copia &egrave; stata fatta.</p>' +
+    '<div class="errore" id="rp-err" hidden></div>' +
+    '<div class="azioni"><button class="b b--sec" id="annulla">Annulla</button>' +
+    '<button class="b b--all" id="rp-ok">Ripristina</button></div>');
+  document.getElementById('annulla').onclick = chiudi;
+  document.getElementById('rp-ok').onclick = function(){
+    var f = document.getElementById('rp-file').files[0];
+    var pw = document.getElementById('rp-pw').value;
+    var err = document.getElementById('rp-err');
+    if (!f)  { err.hidden = false; err.innerHTML = '<b>Scegli il file</b> della copia.'; return; }
+    if (!pw) { err.hidden = false; err.innerHTML = '<b>Manca la parola</b> con cui &egrave; stata protetta.'; return; }
+    var b = document.getElementById('rp-ok');
+    b.disabled = true; b.textContent = 'Ripristino\u2026';
+
+    f.text().then(function(t){ return JSON.parse(t); })
+      .then(function(busta){
+        if (busta.tipo !== 'sicury-copia-cifrata') throw new Error('Non sembra una copia di Sicury Turni.');
+        return chiaveDaPassword(pw, busta.sale, busta.giri).then(function(k){
+          return decifraTesto(k, busta);
+        });
+      })
+      .then(function(t){
+        var pacchetto = JSON.parse(t);
+        if (pacchetto.tipo !== 'sicury-copia') throw new Error('Il contenuto non e\u0300 una copia valida.');
+        // la chiave d'archivio torna quella della copia, insieme alle sue utenze
+        return sub.importKey('raw', daB64(pacchetto.chiave), { name:'AES-GCM' }, true, ['encrypt','decrypt'])
+          .then(function(dek){
+            DEK = dek;
+            scriviUtenze(pacchetto.utenze || []);
+            D = completa(pacchetto.dati);
+            var file = pacchetto.file || [];
+            return conStore('readwrite', function(st){
+              st.clear();
+              file.forEach(function(x){ st.put(x); });
+            }).catch(function(){}).then(function(){
+              annota('ripristino', 'archivio ripristinato da copia', 'copia del ' + pacchetto.quando.slice(0,10));
+              return salva();
+            });
+          });
+      })
+      .then(function(){
+        chiudi();
+        blocca('ripristino', '<b>Archivio ripristinato.</b> Entra con la password che usavi ' +
+                             'quando &egrave; stata fatta la copia.');
+      })
+      .catch(function(e){
+        b.disabled = false; b.textContent = 'Ripristina';
+        err.hidden = false;
+        err.innerHTML = '<b>Ripristino non riuscito.</b> ' +
+          (/decrypt|operation|Cipher/i.test(e.message || '')
+            ? 'La parola di protezione non apre questo file.'
+            : esc(e.message || ''));
+      });
+  };
+}
+
+/* Si parte puliti: via i dati dimostrativi, restano solo le utenze di direzione. */
+function fogliaAzzera(){
+  var quanti = D.dipendenti.length;
+  apri('<h2>Svuotare l&rsquo;archivio dimostrativo?</h2>' +
+    '<p class="foglio__nota">Serve per cominciare con i vostri dati veri, a schermo pulito.</p>' +
+    '<div class="dati">' +
+      '<div><span>Dipendenti</span><b>' + quanti + ' eliminati</b></div>' +
+      '<div><span>Turni</span><b>' + D.turni.length + ' eliminati</b></div>' +
+      '<div><span>Documenti e buste paga</span><b>' + (D.documenti.length + D.cedolini.length) + ' eliminati</b></div>' +
+      '<div><span>Assenze e richieste</span><b>' + (D.assenze.length + D.richieste.length) + ' eliminate</b></div>' +
+      '<div><span>Postazioni e clienti</span><b>restano, da modificare</b></div>' +
+      '<div><span>La tua utenza</span><b>resta</b></div>' +
+    '</div>' +
+    '<div class="errore">Operazione non annullabile. Se vuoi conservare la dimostrazione, ' +
+      '<b>scarica prima una copia</b>.</div>' +
+    '<div class="azioni"><button class="b b--sec" id="annulla">Annulla</button>' +
+    '<button class="b b--all" id="az-ok">Svuota e riparti</button></div>');
+  document.getElementById('annulla').onclick = chiudi;
+  document.getElementById('az-ok').onclick = function(){
+    D.dipendenti.forEach(function(d){ togliUtenza(d.email); });
+    D.dipendenti = []; D.turni = []; D.documenti = []; D.cedolini = [];
+    D.assenze = []; D.richieste = [];
+    conStore('readwrite', function(st){ st.clear(); }).catch(function(){});
+    annota(utente.email, 'archivio dimostrativo svuotato', quanti + ' schede');
+    fascicoloAperto = null;
+    salva(); chiudi(); aggiornaAvviso(); vaiA('fascicoli');
+  };
+}
+
 VISTE.sicurezza = function(){
   intesta('Sicurezza', 'Come sono protetti i dati di questo dispositivo e chi ha fatto cosa');
 
@@ -1928,6 +2099,22 @@ VISTE.sicurezza = function(){
         voce('all', 'Archivio centrale e copie di sicurezza',
           'I dati vivono solo in questo browser: non si condividono con gli altri dispositivi e non esiste un backup. Serve un archivio centrale.') +
       '</tbody></table></div></div>' +
+
+    '<div class="blocco"><div class="blocco__testa"><h2>Copia di sicurezza</h2>' +
+      '<div class="rapidi">' +
+        '<button class="b b--pri b--min" data-esporta="1">Scarica la copia</button>' +
+        '<button class="b b--sec b--min" data-ripristina="1">Ripristina da copia</button>' +
+      '</div></div>' +
+      '<p class="vuoto">La copia contiene tutto: schede, turni, documenti e buste paga, ' +
+      'e resta cifrata con la stessa password. Conservala fuori da questo dispositivo. ' +
+      'Finch&eacute; non c&rsquo;&egrave; un archivio centrale, &egrave; l&rsquo;unica rete di protezione.</p></div>' +
+
+    '<div class="blocco"><div class="blocco__testa"><h2>Partire con i dati veri</h2>' +
+      (archivioDimostrativo() ? '<button class="b b--all b--min" data-azzera="1">Svuota l&rsquo;archivio</button>' : '') + '</div>' +
+      '<p class="vuoto">' + (archivioDimostrativo()
+        ? 'In archivio ci sono ancora i dipendenti inventati della dimostrazione. ' +
+          'Svuotando resta la tua utenza e restano postazioni e clienti, da modificare con i vostri.'
+        : 'L&rsquo;archivio contiene gi&agrave; solo i vostri dati.') + '</p></div>' +
 
     '<div class="blocco"><div class="blocco__testa"><h2>La mia password</h2>' +
       '<button class="b b--pri b--min" data-cambia-pw="1">Cambia password</button></div>' +
@@ -2079,9 +2266,11 @@ function docPresenze(dal, al, idDip){
                  '<td>' + esc(loc(t.location).nome) + '<small>' + esc(loc(t.location).citta) + '</small></td>' +
                  '<td>' + esc(mansione(t.mansione).nome) + '</td>' +
                  '<td class="num">' + (c ? c.ora : '&mdash;') + '</td>' +
-                 '<td class="num">' + (c ? c.distanza + ' m' : '&mdash;') + '</td>' +
+                 '<td class="num">' + (c ? (c.senzaPosizione || c.distanza == null ? 'n.d.' : c.distanza + ' m') : '&mdash;') + '</td>' +
                  '<td' + (c && c.fuoriArea ? ' class="fuori"' : '') + '>' +
-                   (c ? (c.fuoriArea ? 'fuori area' : 'in area') : 'non timbrato') + '</td></tr>';
+                   (c ? (c.senzaPosizione || c.distanza == null ? 'senza posizione'
+                                                                : (c.fuoriArea ? 'fuori area' : 'in area'))
+                      : 'non timbrato') + '</td></tr>';
         }).join('') : '<tr><td colspan="7" class="nulla">Nessun turno nel periodo.</td></tr>') +
         '<tr class="totali"><td colspan="4">Totale: ' + ts.length + ' turni, ' +
           timbrati.length + ' timbrati</td>' +
@@ -2216,8 +2405,10 @@ function csvPresenze(dal, al, idDip){
       var c = t.conferma, l = loc(t.location);
       out.push(csvRiga([dip(t.dipendente).nome, t.data, t.inizio, t.fine,
         oreTurno(t).toFixed(1).replace('.', ','), l.nome, l.citta, mansione(t.mansione).nome,
-        c ? c.ora : '', c ? c.distanza : '',
-        c ? (c.fuoriArea ? 'fuori area' : 'in area') : 'non timbrato']));
+        c ? c.ora : '', c && c.distanza != null ? c.distanza : '',
+        c ? (c.senzaPosizione || c.distanza == null ? 'senza posizione'
+                                                    : (c.fuoriArea ? 'fuori area' : 'in area'))
+          : 'non timbrato']));
     });
   return out.join('\n');
 }
@@ -2907,7 +3098,14 @@ VISTE.turni = function(){
 var pianState = { scheda:'turni', dal:null, settimane:1, vincoli:'' };
 
 function lunediDi(d){ var x = new Date(d); var g = (x.getDay()+6)%7; x.setDate(x.getDate()-g); x.setHours(0,0,0,0); return x; }
-function isoDi(d){ return new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10); }
+/* La data va scritta come la vede chi sta davanti allo schermo. Passare da
+   toISOString() significherebbe usare l'ora di Greenwich: in Italia, fino alle
+   due di notte, il gestionale si convincerebbe che e' ancora ieri. */
+function isoDi(d){
+  return d.getFullYear() + '-' +
+         ('0' + (d.getMonth() + 1)).slice(-2) + '-' +
+         ('0' + d.getDate()).slice(-2);
+}
 
 VISTE.pianifica = function(){
   if (!pianState.dal) pianState.dal = isoDi(lunediDi(new Date()));
@@ -3192,7 +3390,7 @@ function schedaTimbrature(){
     return '<tr><td><div class="persona">'+avatar(d.nome)+'<b>'+esc(d.nome)+'</b></div></td>' +
            '<td class="num">'+dataBreve(x.data)+'</td><td class="num">'+x.conferma.ora+'</td>' +
            '<td>'+l.nome+'<small>'+l.citta+'</small></td>' +
-           '<td class="num">'+x.conferma.distanza+' m</td>' +
+           '<td class="num">'+distanzaTimbratura(x.conferma)+'</td>' +
            '<td><span class="p p--'+(x.conferma.fuoriArea?'att':'ok')+'">'+
              (x.conferma.fuoriArea?'fuori area':'in area')+'</span></td></tr>';
   }).join('');
@@ -3501,7 +3699,7 @@ function schedaFascicolo(d){
         timbr.map(function(t){
           return '<tr><td><b>'+dataBreve(t.data)+'</b></td><td class="num">'+t.conferma.ora+'</td>' +
                  '<td>'+loc(t.location).nome+'<small>'+loc(t.location).citta+'</small></td>' +
-                 '<td class="num">'+t.conferma.distanza+' m<small>raggio '+loc(t.location).raggio+' m</small></td>' +
+                 '<td class="num">'+distanzaTimbratura(t.conferma, loc(t.location).raggio)+'</td>' +
                  '<td><span class="p p--'+(t.conferma.fuoriArea?'att':'ok')+'">'+(t.conferma.fuoriArea?'fuori area':'in area')+'</span></td>' +
                  '<td><button class="b b--sec b--min" data-mappa="'+t.id+'">Vedi posizione</button></td></tr>';
         }).join('') + '</tbody></table></div>'
@@ -3707,7 +3905,7 @@ VISTE.mieiturni = function(){
     var oggi = t.data === oggiISO();
     var azione = t.conferma
       ? '<span class="p p--'+(t.conferma.fuoriArea?'att':'ok')+'">'+(t.conferma.fuoriArea?'fuori area':'confermato')+'</span>' +
-        '<span class="p p--neutro">'+t.conferma.ora+' &middot; '+t.conferma.distanza+' m</span>'
+        '<span class="p p--neutro">'+t.conferma.ora+(t.conferma.senzaPosizione ? '' : ' &middot; '+t.conferma.distanza+' m')+'</span>'
       : (oggi && abilitata('gps') ? '<button class="b b--pri b--min" data-conferma="'+t.id+'">Conferma con GPS</button>'
               : '<span class="p p--neutro">fra '+giorniA(t.data)+' giorni</span>');
     return '<article class="turno">' +
@@ -3792,6 +3990,9 @@ function agganciaAzioni(){
   v.querySelectorAll('[data-nuova-assenza]').forEach(function(b){ b.onclick = function(){ fogliaAssenza(b.dataset.nuovaAssenza); }; });
   v.querySelectorAll('[data-nuova-richiesta]').forEach(function(b){ b.onclick = fogliaRichiesta; });
   v.querySelectorAll('[data-cambia-pw]').forEach(function(b){ b.onclick = function(){ fogliaCambiaPassword(false); }; });
+  v.querySelectorAll('[data-esporta]').forEach(function(b){ b.onclick = fogliaEsporta; });
+  v.querySelectorAll('[data-ripristina]').forEach(function(b){ b.onclick = fogliaRipristina; });
+  v.querySelectorAll('[data-azzera]').forEach(function(b){ b.onclick = fogliaAzzera; });
   v.querySelectorAll('[data-decidi]').forEach(function(b){ b.onclick = function(){ fogliaDecisione(b.dataset.decidi); }; });
   v.querySelectorAll('[data-elimina-assenza]').forEach(function(b){ b.onclick = function(){
     D.assenze = D.assenze.filter(function(x){ return x.id !== b.dataset.eliminaAssenza; }); salva(); vaiA('fascicoli'); }; });
@@ -4007,6 +4208,19 @@ function fogliaCedolino(idDip){
 function fogliaMappa(idTurno){
   var t = D.turni.find(function(x){ return x.id === idTurno; });
   var l = loc(t.location), m = t.conferma.distanza, fuori = t.conferma.fuoriArea;
+  if (t.conferma.senzaPosizione || m === null || m === undefined) {
+    apri('<h2>Timbratura senza posizione</h2>' +
+      '<p class="foglio__nota">' + esc(dip(t.dipendente).nome) + ' &middot; ' + dataBreve(t.data) +
+        ' &middot; ' + mansione(t.mansione).nome + '</p>' +
+      '<div class="nota-riga">L&rsquo;operatore ha registrato la conferma alle <b>' + t.conferma.ora +
+        '</b> senza che il dispositivo fornisse la posizione: permesso negato, segnale assente o ' +
+        'rilevamento troppo lento. Il turno resta confermato, ma senza riscontro di luogo.</div>' +
+      '<div class="dati"><div><span>Postazione</span><b>' + esc(l.nome) + '</b></div>' +
+        '<div><span>Citt&agrave;</span><b>' + esc(l.citta) + '</b></div></div>' +
+      '<div class="azioni"><button class="b b--pri" id="ann">Chiudi</button></div>');
+    document.getElementById('ann').onclick = chiudi;
+    return;
+  }
   var ang = (parseInt(idTurno.replace(/\D/g,'').slice(-3) || '0', 10) % 360) * Math.PI / 180;
   var rr = Math.min(m / l.raggio, 1.4) * 62;
   var px = (100 + Math.cos(ang)*rr).toFixed(1), py = (100 + Math.sin(ang)*rr).toFixed(1);
@@ -4491,61 +4705,138 @@ function confermaEliminaDip(idDip){
 }
 
 /* --- conferma turno con posizione --- */
+/* Timbratura: si chiede davvero la posizione al dispositivo.
+   Se il permesso viene negato o il segnale non arriva, non si inventa niente:
+   si dice cosa e' successo e si lascia scegliere. */
 function confermaTurno(idTurno){
   var t = D.turni.find(function(x){ return x.id === idTurno; });
   var l = loc(t.location);
 
   apri('<h2>Rilevazione della posizione</h2>' +
-       '<p class="foglio__nota">'+mansione(t.mansione).nome+' &middot; '+nomeLoc(t.location)+'</p>' +
+       '<p class="foglio__nota">' + mansione(t.mansione).nome + ' &middot; ' + nomeLoc(t.location) + '</p>' +
        '<div class="radar"><div class="radar__cerchio"><img src=\"data:image/webp;base64,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\" alt=""></div></div>' +
-       '<p style="text-align:center;color:var(--smorzato);font-size:.86rem">Ricerca del segnale in corso&hellip;</p>');
+       '<p id="gps-stato" style="text-align:center;color:var(--smorzato);font-size:.86rem">' +
+         'Ricerca del segnale in corso&hellip;</p>' +
+       '<div class="azioni"><button class="b b--sec" id="gps-annulla">Annulla</button></div>');
+  document.getElementById('gps-annulla').onclick = chiudi;
 
-  setTimeout(function(){
-    var scarto = (Math.random() < 0.25 ? 0.0035 : 0.0006);
-    var lat = l.lat + (Math.random()-0.5)*scarto;
-    var lng = l.lng + (Math.random()-0.5)*scarto;
-    var m = distanza(l.lat, l.lng, lat, lng);
-    var fuori = m > l.raggio;
-    var ora = new Date().toTimeString().slice(0,5);
-
-    // pianta di prossimita': anello = raggio consentito, punto = posizione rilevata
-    var ang = Math.random()*Math.PI*2;
-    var rr = Math.min(m / l.raggio, 1.4) * 62;
-    var px = (100 + Math.cos(ang)*rr).toFixed(1), py = (100 + Math.sin(ang)*rr).toFixed(1);
-    var col = fuori ? 'var(--att)' : 'var(--ok)';
-
-    var pianta =
-      '<svg class="pianta" viewBox="0 0 200 200" role="img" aria-label="Distanza dal punto di servizio">' +
-        '<circle cx="100" cy="100" r="86" fill="none" stroke="var(--linea)" stroke-dasharray="2 6"/>' +
-        '<circle cx="100" cy="100" r="62" fill="var(--ok-velo)" stroke="var(--ok)" stroke-dasharray="5 5" opacity=".85"/>' +
-        '<line x1="100" y1="8" x2="100" y2="192" stroke="var(--linea)" stroke-width="1"/>' +
-        '<line x1="8" y1="100" x2="192" y2="100" stroke="var(--linea)" stroke-width="1"/>' +
-        '<circle cx="100" cy="100" r="5" fill="var(--marchio)"/>' +
-        '<line x1="100" y1="100" x2="'+px+'" y2="'+py+'" stroke="'+col+'" stroke-width="1.5" stroke-dasharray="3 3"/>' +
-        '<circle cx="'+px+'" cy="'+py+'" r="9" fill="'+col+'" opacity=".18"/>' +
-        '<circle cx="'+px+'" cy="'+py+'" r="4.5" fill="'+col+'"/>' +
-        '<text x="100" y="176" text-anchor="middle" font-size="9" fill="var(--tenue)" font-family="monospace">raggio '+l.raggio+' m</text>' +
-      '</svg>';
-
-    apri('<h2>'+(fuori ? 'Sei fuori dall&rsquo;area' : 'Servizio confermato')+'</h2>' +
-      '<p class="foglio__nota">'+mansione(t.mansione).nome+' &middot; '+nomeLoc(t.location)+'</p>' +
-      '<div class="pianta__box">'+pianta+
-        '<div class="pianta__dati">' +
-          '<div><span>Distanza</span><b style="color:'+col+'">'+m+' m</b></div>' +
-          '<div><span>Raggio consentito</span><b>'+l.raggio+' m</b></div>' +
-          '<div><span>Orario rilevato</span><b>'+ora+'</b></div>' +
-          '<div><span>Postazione</span><b>'+l.citta+'</b></div>' +
-        '</div></div>' +
-      (fuori ? '<div class="errore">La conferma viene registrata come <b>fuori area</b> e segnalata al coordinatore. Il turno non viene bloccato.</div>' : '') +
+  posizioneAttuale().then(function(p){
+    mostraEsitoTimbratura(t, l, p);
+  }, function(e){
+    var s = document.getElementById('gps-stato');
+    if (!s) return;   // la finestra e' gia' stata chiusa
+    apri('<h2>Posizione non disponibile</h2>' +
+      '<p class="foglio__nota">' + mansione(t.mansione).nome + ' &middot; ' + nomeLoc(t.location) + '</p>' +
+      '<div class="errore">' + esc(e.message) + '</div>' +
+      '<p class="foglio__nota">La timbratura si pu&ograve; registrare lo stesso, ma resta ' +
+        '<b>senza posizione</b> e il coordinatore la vede come tale.</p>' +
       '<div class="azioni"><button class="b b--sec" id="annulla">Annulla</button>' +
-      '<button class="b b--pri" id="ok">Registra la conferma</button></div>');
-
+      '<button class="b b--pri" id="senza">Registra senza posizione</button></div>');
     document.getElementById('annulla').onclick = chiudi;
-    document.getElementById('ok').onclick = function(){
-      t.conferma = { ora:ora, distanza:m, fuoriArea:fuori };
+    document.getElementById('senza').onclick = function(){
+      t.conferma = { ora:oraDiAdesso(), distanza:null, fuoriArea:false, senzaPosizione:true };
+      annota(utente.email, 'timbratura senza posizione', nomeLoc(t.location) + ' ' + dataBreve(t.data));
       salva(); chiudi(); vaiA('mieiturni');
     };
-  }, 1100);
+  });
+}
+
+function oraDiAdesso(){ return new Date().toTimeString().slice(0,5); }
+
+/* Una timbratura puo' essere senza posizione: va detto, non inventato. */
+function distanzaTimbratura(c, raggio){
+  if (!c) return '&mdash;';
+  if (c.senzaPosizione || c.distanza === null || c.distanza === undefined)
+    return '<span class="p p--neutro p--vuota">senza posizione</span>';
+  return c.distanza + ' m' + (raggio ? '<small>raggio ' + raggio + ' m</small>' : '');
+}
+function esitoTimbratura(c){
+  if (!c) return '<span class="p p--neutro">da timbrare</span>';
+  if (c.senzaPosizione) return '<span class="p p--att">senza posizione</span>';
+  return '<span class="p p--' + (c.fuoriArea ? 'att' : 'ok') + '">' +
+         (c.fuoriArea ? 'fuori area' : 'in area') + '</span>';
+}
+
+/* Chiede la posizione al dispositivo. Nessun ripiego inventato. */
+function posizioneAttuale(){
+  return new Promise(function(ris, no){
+    if (!navigator.geolocation) {
+      return no(new Error('Questo dispositivo non mette a disposizione la posizione.'));
+    }
+    if (!window.isSecureContext) {
+      return no(new Error('La posizione si legge solo da un collegamento sicuro (https).'));
+    }
+    navigator.geolocation.getCurrentPosition(
+      function(pos){
+        ris({ lat:pos.coords.latitude, lng:pos.coords.longitude,
+              precisione:Math.round(pos.coords.accuracy || 0) });
+      },
+      function(err){
+        var m = 'Non riesco a leggere la posizione.';
+        if (err.code === 1) m = 'Permesso negato. Consenti l\u2019accesso alla posizione nelle impostazioni del telefono, poi riprova.';
+        if (err.code === 2) m = 'Segnale non disponibile. Prova all\u2019aperto o attendi qualche secondo.';
+        if (err.code === 3) m = 'Il rilevamento ha impiegato troppo tempo. Riprova.';
+        no(new Error(m));
+      },
+      { enableHighAccuracy:true, timeout:15000, maximumAge:0 }
+    );
+  });
+}
+
+function mostraEsitoTimbratura(t, l, p){
+  var m = distanza(l.lat, l.lng, p.lat, p.lng);
+  // il margine di errore del GPS gioca a favore di chi timbra
+  var fuori = (m - p.precisione) > l.raggio;
+  var ora = oraDiAdesso();
+
+  // la pianta mostra la direzione vera, non una a caso
+  var dy = p.lat - l.lat, dx = (p.lng - l.lng) * Math.cos(l.lat * Math.PI / 180);
+  var ang = Math.atan2(-dy, dx);
+  var rr = Math.min(m / l.raggio, 1.4) * 62;
+  var px = (100 + Math.cos(ang) * rr).toFixed(1);
+  var py = (100 + Math.sin(ang) * rr).toFixed(1);
+  var col = fuori ? 'var(--att)' : 'var(--ok)';
+  var rp = Math.min((p.precisione / l.raggio) * 62, 80).toFixed(1);
+
+  var pianta =
+    '<svg class="pianta" viewBox="0 0 200 200" role="img" aria-label="Distanza dal punto di servizio">' +
+      '<circle cx="100" cy="100" r="86" fill="none" stroke="var(--linea)" stroke-dasharray="2 6"/>' +
+      '<circle cx="100" cy="100" r="62" fill="var(--ok-velo)" stroke="var(--ok)" stroke-dasharray="5 5" opacity=".85"/>' +
+      '<line x1="100" y1="8" x2="100" y2="192" stroke="var(--linea)" stroke-width="1"/>' +
+      '<line x1="8" y1="100" x2="192" y2="100" stroke="var(--linea)" stroke-width="1"/>' +
+      '<circle cx="100" cy="100" r="5" fill="var(--marchio)"/>' +
+      '<line x1="100" y1="100" x2="' + px + '" y2="' + py + '" stroke="' + col + '" stroke-width="1.5" stroke-dasharray="3 3"/>' +
+      '<circle cx="' + px + '" cy="' + py + '" r="' + rp + '" fill="' + col + '" opacity=".12"/>' +
+      '<circle cx="' + px + '" cy="' + py + '" r="4.5" fill="' + col + '"/>' +
+      '<text x="100" y="176" text-anchor="middle" font-size="9" fill="var(--tenue)" font-family="monospace">raggio ' + l.raggio + ' m</text>' +
+    '</svg>';
+
+  apri('<h2>' + (fuori ? 'Sei fuori dall&rsquo;area' : 'Servizio confermato') + '</h2>' +
+    '<p class="foglio__nota">' + mansione(t.mansione).nome + ' &middot; ' + nomeLoc(t.location) + '</p>' +
+    '<div class="pianta__box">' + pianta +
+      '<div class="pianta__dati">' +
+        '<div><span>Distanza</span><b style="color:' + col + '">' + m + ' m</b></div>' +
+        '<div><span>Raggio consentito</span><b>' + l.raggio + ' m</b></div>' +
+        '<div><span>Precisione del segnale</span><b>&plusmn; ' + p.precisione + ' m</b></div>' +
+        '<div><span>Orario rilevato</span><b>' + ora + '</b></div>' +
+      '</div></div>' +
+    (fuori
+      ? '<div class="errore">La conferma viene registrata come <b>fuori area</b> e segnalata al coordinatore. Il turno non viene bloccato.</div>'
+      : '') +
+    (p.precisione > l.raggio
+      ? '<div class="nota-riga">Il segnale &egrave; impreciso (&plusmn; ' + p.precisione + ' m, pi&ugrave; largo del raggio consentito): ' +
+        'il margine viene contato a tuo favore.</div>'
+      : '') +
+    '<div class="azioni"><button class="b b--sec" id="annulla">Annulla</button>' +
+    '<button class="b b--pri" id="ok">Registra la conferma</button></div>');
+
+  document.getElementById('annulla').onclick = chiudi;
+  document.getElementById('ok').onclick = function(){
+    t.conferma = { ora:ora, distanza:m, fuoriArea:fuori, precisione:p.precisione };
+    annota(utente.email, fuori ? 'timbratura fuori area' : 'timbratura',
+           nomeLoc(t.location) + ' ' + dataBreve(t.data) + ' \u00b7 ' + m + ' m');
+    salva(); chiudi(); vaiA('mieiturni');
+  };
 }
 
 function scarica(idCed){
