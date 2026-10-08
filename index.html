@@ -939,27 +939,27 @@ function semi() {
   }
 
   var dipendenti = [
-    P('d1','Marco Zanetti','m.zanetti@sicury.local','+39 340 118 2240','ZNTMRC88M14E473K',
+    P('d1','Marco Zanetti','marcozanetti@sicuryservizi.com','+39 340 118 2240','ZNTMRC88M14E473K',
       ['asc','steward','portierato'], ['l2','l4'], C('indeterminato',-980,null,40,'IV'),
       [{t:'elenco-prefettizio',s:fra(210)},{t:'antincendio',s:fra(64)}]),
-    P('d2','Elena Rossi','e.rossi@sicury.local','+39 347 905 6611','RSSLNE92T55L424P',
+    P('d2','Elena Rossi','elenarossi@sicuryservizi.com','+39 347 905 6611','RSSLNE92T55L424P',
       ['reception','soccorso'], ['l4'], C('indeterminato',-1460,null,40,'V'),
       [{t:'primo-soccorso',s:fra(300)}]),
-    P('d3','Andrea Furlan','a.furlan@sicury.local','+39 333 274 8109','FRLNDR85B19L483T',
+    P('d3','Andrea Furlan','andreafurlan@sicuryservizi.com','+39 333 274 8109','FRLNDR85B19L483T',
       ['moviere','portierato'], ['l4','l5'], C('indeterminato',-2190,null,40,'IV'),
       [{t:'cantieri',s:fra(21)}]),
-    P('d4','Sara Bortolussi','s.bortolussi@sicury.local','+39 348 661 3027','BRTSRA95E58L424M',
+    P('d4','Sara Bortolussi','sarabortolussi@sicuryservizi.com','+39 348 661 3027','BRTSRA95E58L424M',
       ['bagnino','soccorso'], ['l3'], C('stagionale',-150,180,24,'VI'),
       [{t:'brevetto-salvamento',s:fra(6)},{t:'primo-soccorso',s:fra(180)}]),
-    P('d5','Luca Deganutti','l.deganutti@sicury.local','+39 331 442 7756','DGNLCU90L03E473B',
+    P('d5','Luca Deganutti','lucadeganutti@sicuryservizi.com','+39 331 442 7756','DGNLCU90L03E473B',
       ['guardia','portierato'], ['l1'], C('indeterminato',-730,null,40,'IV'), []),
-    P('d6','Ivan Petrovic','i.petrovic@sicury.local','+39 327 880 1934','PTRVNI87R21Z149S',
+    P('d6','Ivan Petrovic','ivanpetrovic@sicuryservizi.com','+39 327 880 1934','PTRVNI87R21Z149S',
       ['asc','guardia'], ['l1'], C('determinato',-300,120,40,'V'),
       [{t:'elenco-prefettizio',s:fra(-29)}]),
-    P('d7','Chiara Mattiussi','c.mattiussi@sicury.local','+39 345 203 7718','MTTCHR97P62L424D',
+    P('d7','Chiara Mattiussi','chiaramattiussi@sicuryservizi.com','+39 345 203 7718','MTTCHR97P62L424D',
       ['steward','soccorso'], ['l2','l3'], C('a chiamata',-420,null,20,'VI'),
       [{t:'primo-soccorso',s:fra(420)}]),
-    P('d8','Davide Snidero','d.snidero@sicury.local','+39 340 559 2846','SNDDVD83C07L483F',
+    P('d8','Davide Snidero','davidesnidero@sicuryservizi.com','+39 340 559 2846','SNDDVD83C07L483F',
       ['ncc','guardia'], ['l1','l4'], C('indeterminato',-1825,null,40,'III'),
       [{t:'ncc',s:fra(500)}])
   ];
@@ -1024,8 +1024,8 @@ function semi() {
 
   // utenze di direzione
   var accessi = [
-    { id:'u-rosario',  nome:'Rosario Di Piazza', email:'rosario@sicury.local',  ruolo:'amministratore' },
-    { id:'u-federico', nome:'Federico Plet',     email:'federico@sicury.local', ruolo:'sviluppatore' }
+    { id:'u-rosario',  nome:'Rosario Di Piazza', email:'rosariodipiazza@sicuryservizi.com',  ruolo:'amministratore' },
+    { id:'u-federico', nome:'Federico Plet',     email:'federicoplet@sicuryservizi.com', ruolo:'sviluppatore' }
   ];
 
   // fabbisogno ricorrente: cosa va coperto, dove, con quale mansione
@@ -1401,8 +1401,8 @@ function preparaPrimoAvvio(){
 /* Le password di partenza servono solo a creare le buste al primo avvio:
    da quel momento vivono solo dentro gli involucri cifrati. */
 var PASSWORD_INIZIALI = {
-  'rosario@sicury.local':  'Sicury!Presidio2026',
-  'federico@sicury.local': 'Sicury!Sviluppo2026'
+  'rosariodipiazza@sicuryservizi.com':  'Sicury!Presidio2026',
+  'federicoplet@sicuryservizi.com': 'Sicury!Sviluppo2026'
 };
 var PASSWORD_DIPENDENTE = 'sicury2026';
 
@@ -1513,7 +1513,7 @@ function elencoAccesso(){
   document.getElementById('accesso-scelte').innerHTML =
     '<form id="login" class="login" autocomplete="off">' +
       '<label class="campo"><span>Email</span><input id="l-mail" type="email" ' +
-        'autocomplete="username" placeholder="nome@sicury.local" required></label>' +
+        'autocomplete="username" placeholder="nome@sicuryservizi.com" required></label>' +
       '<label class="campo"><span>Password</span><input id="l-pw" type="password" ' +
         'autocomplete="current-password" required></label>' +
       '<div class="errore" id="l-err" hidden></div>' +
@@ -1864,10 +1864,11 @@ function scadenzeAperte(){
 
 /* ============ sicurezza ============ */
 
-var CONTI_PROVA = ['rosario@sicury.local','federico@sicury.local'];
+var CONTI_PROVA = ['rosariodipiazza@sicuryservizi.com','federicoplet@sicuryservizi.com'];
 
 function archivioDimostrativo(){
-  return D.dipendenti.some(function(d){ return /@sicury\.local$/.test(d.email) && /Zanetti|Bortolussi|Deganutti|Petrovic|Mattiussi|Snidero|Furlan|Rossi/.test(d.nome); });
+  return D.dipendenti.some(function(d){
+    return /Zanetti|Bortolussi|Deganutti|Petrovic|Mattiussi|Snidero|Furlan|Rossi/.test(d.nome); });
 }
 
 function aggiornaAvviso(){
@@ -4284,7 +4285,7 @@ function fogliaDipendente(id){
     '<label class="campo"><span>Codice fiscale</span><input id="n-cf" value="' + esc(d.cf || '') + '" placeholder="Facoltativo"></label>' +
 
     '<h3 class="foglio__sez">Accesso al gestionale</h3>' +
-    '<label class="campo"><span>Email di accesso</span><input id="n-mail" value="' + esc(d.email) + '" placeholder="g.toffoli@sicury.local"></label>' +
+    '<label class="campo"><span>Email di accesso</span><input id="n-mail" value="' + esc(d.email) + '" placeholder="giuliatoffoli@sicuryservizi.com"></label>' +
     '<label class="campo"><span>' + (nuovo ? 'Password iniziale' : 'Reimposta la password') + '</span>' +
       '<input id="n-pw" type="text" placeholder="' + (nuovo ? 'La cambier&agrave; al primo accesso' : 'Lascia vuoto per non cambiarla') + '"></label>' +
 
