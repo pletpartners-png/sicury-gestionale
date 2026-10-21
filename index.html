@@ -1308,8 +1308,20 @@ function caricaDaNuvola(){
             ? m.impostazioni[0].ui : uiDiPartenza(),
       letture: {}
     };
-    if (!d.codici.length)   d.codici = codiciDiPartenza();
-    return completa(d);
+
+    /* Archivio appena nato: i valori di partenza vanno scritti subito, non
+       solo tenuti in memoria. Altrimenti il confronto non li vedrebbe mai
+       come nuovi, e il fabbisogno, che richiama i codici, non si potrebbe
+       salvare perche' quei codici nel database non esisterebbero. */
+    var daScrivere = [];
+    if (!d.codici.length) {
+      d.codici = codiciDiPartenza();
+      daScrivere.push(scriviRighe('codici', d.codici).catch(function(){}));
+    }
+    if (!m.impostazioni.length) {
+      daScrivere.push(scriviRighe('impostazioni', [{ id:1, ui:d.ui }]).catch(function(){}));
+    }
+    return Promise.all(daScrivere).then(function(){ return completa(d); });
   });
 }
 
