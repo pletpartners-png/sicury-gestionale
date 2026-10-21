@@ -3900,8 +3900,7 @@ function schedaTimbrature(){
            '<td class="num">'+dataBreve(x.data)+'</td><td class="num">'+x.conferma.ora+'</td>' +
            '<td>'+l.nome+'<small>'+l.citta+'</small></td>' +
            '<td class="num">'+distanzaTimbratura(x.conferma)+'</td>' +
-           '<td><span class="p p--'+(x.conferma.fuoriArea?'att':'ok')+'">'+
-             (x.conferma.fuoriArea?'fuori area':'in area')+'</span></td></tr>';
+           '<td>'+esitoTimbratura(x.conferma)+'</td></tr>';
   }).join('');
   document.getElementById('sotto').innerHTML =
     '<div class="blocco"><div class="blocco__testa"><h2>Timbrature con posizione</h2>' +
@@ -4192,8 +4191,10 @@ function schedaFascicolo(d){
       '<button class="b b--pri b--min" data-nuovoturno="'+oggiISO()+'|'+d.id+'">Assegna turno</button></div>' +
       (futuri.length ? '<div class="tabellone"><table><thead><tr><th>Quando</th><th>Orario</th><th>Postazione</th><th>Mansione</th><th>Stato</th><th></th></tr></thead><tbody>' +
         futuri.map(function(t){
-          var st = t.conferma ? '<span class="p p--'+(t.conferma.fuoriArea?'att':'ok')+'">'+(t.conferma.fuoriArea?'fuori area':'timbrato')+'</span>'
-                              : '<span class="p p--neutro">da timbrare</span>';
+          var st = t.conferma
+            ? (t.conferma.senzaPosizione ? '<span class="p p--att">senza posizione</span>'
+               : '<span class="p p--'+(t.conferma.fuoriArea?'att':'ok')+'">'+(t.conferma.fuoriArea?'fuori area':'timbrato')+'</span>')
+            : '<span class="p p--neutro">da timbrare</span>';
           return '<tr><td><b>'+dataBreve(t.data)+'</b></td><td class="num">'+t.inizio+'&ndash;'+t.fine+'</td>' +
                  '<td>'+loc(t.location).nome+'<small>'+loc(t.location).citta+'</small></td>' +
                  '<td>'+mansione(t.mansione).nome+(t.deroga?' <span class="p p--att">deroga</span>':'')+'</td><td>'+st+'</td>' +
@@ -4209,7 +4210,7 @@ function schedaFascicolo(d){
           return '<tr><td><b>'+dataBreve(t.data)+'</b></td><td class="num">'+t.conferma.ora+'</td>' +
                  '<td>'+loc(t.location).nome+'<small>'+loc(t.location).citta+'</small></td>' +
                  '<td class="num">'+distanzaTimbratura(t.conferma, loc(t.location).raggio)+'</td>' +
-                 '<td><span class="p p--'+(t.conferma.fuoriArea?'att':'ok')+'">'+(t.conferma.fuoriArea?'fuori area':'in area')+'</span></td>' +
+                 '<td>'+esitoTimbratura(t.conferma)+'</td>' +
                  '<td><button class="b b--sec b--min" data-mappa="'+t.id+'">Vedi posizione</button></td></tr>';
         }).join('') + '</tbody></table></div>'
         : '<p class="vuoto">Nessuna timbratura. Compaiono qui appena l&rsquo;operatore conferma un turno dal telefono.</p>') + '</div>' +
@@ -4413,7 +4414,8 @@ VISTE.mieiturni = function(){
     var d = new Date(t.data+'T00:00:00');
     var oggi = t.data === oggiISO();
     var azione = t.conferma
-      ? '<span class="p p--'+(t.conferma.fuoriArea?'att':'ok')+'">'+(t.conferma.fuoriArea?'fuori area':'confermato')+'</span>' +
+      ? (t.conferma.senzaPosizione ? '<span class="p p--att">senza posizione</span>'
+         : '<span class="p p--'+(t.conferma.fuoriArea?'att':'ok')+'">'+(t.conferma.fuoriArea?'fuori area':'confermato')+'</span>') +
         '<span class="p p--neutro">'+t.conferma.ora+(t.conferma.senzaPosizione ? '' : ' &middot; '+t.conferma.distanza+' m')+'</span>'
       : (oggi && abilitata('gps') ? '<button class="b b--pri b--min" data-conferma="'+t.id+'">Conferma con GPS</button>'
               : '<span class="p p--neutro">fra '+giorniA(t.data)+' giorni</span>');
