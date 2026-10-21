@@ -1068,6 +1068,371 @@ function uiDiPartenza(){
 }
 function abilitata(f){ return !D.ui || !D.ui.funzioni || D.ui.funzioni[f] !== false; }
 
+/* ============ archivio condiviso ============
+   Tutto quello che sta sopra funziona su un archivio cifrato che vive nel
+   singolo dispositivo. Qui sotto c'e' la seconda possibilita': un archivio
+   unico su Supabase, che tutti vedono insieme.
+
+   Non si usa nessuna libreria esterna: bastano chiamate HTTP. Cosi' la
+   pagina resta un file solo, senza dipendere da servizi di terzi per il
+   proprio codice, e la Content-Security-Policy puo' restare stretta.
+
+   La chiave qui sotto e' pubblica per sua natura: da sola non apre niente.
+   A decidere chi vede cosa sono le regole scritte nel database, che
+   guardano chi ha fatto l'accesso. */
+
+var NUVOLA = {
+  url:    'https://ologdfrrtgkewakpfgdz.supabase.co',
+  chiave: 'sb_publishable_HPVxSDT4U80wL12E1zn5Dg_Jk1PzpSl'
+};
+
+var CHIAVE_MODO = 'sicury:modo';
+function modoArchivio(){
+  try { return localStorage.getItem(CHIAVE_MODO) || 'locale'; } catch (e) { return 'locale'; }
+}
+function impostaModo(m){
+  try { localStorage.setItem(CHIAVE_MODO, m); } catch (e) {}
+}
+function inNuvola(){ return modoArchivio() === 'condiviso' && !!NUVOLA.url; }
+
+/* La sessione vive in memoria: chiudendo la scheda si rientra. */
+var sessione = null;   // { token, rinnovo, scade, uid }
+
+/* ---- chiamate ---- */
+
+function nuvolaUrl(percorso){ return NUVOLA.url.replace(/\/$/, '') + percorso; }
+
+function nuvolaTeste(extra){
+  var t = { 'apikey': NUVOLA.chiave, 'Content-Type': 'application/json' };
+  if (sessione && sessione.token) t['Authorization'] = 'Bearer ' + sessione.token;
+  if (extra) Object.keys(extra).forEach(function(k){ t[k] = extra[k]; });
+  return t;
+}
+
+/* Se il momento buono e' passato, si rinnova prima di chiedere. */
+function sessioneViva(){
+  if (!sessione) return Promise.reject(new Error('Sessione scaduta.'));
+  if (Date.now() < sessione.scade - 60000) return Promise.resolve();
+  return nuvolaRinnova();
+}
+
+function nuvolaRinnova(){
+  if (!sessione || !sessione.rinnovo) return Promise.reject(new Error('Sessione scaduta.'));
+  return fetch(nuvolaUrl('/auth/v1/token?grant_type=refresh_token'), {
+    method:'POST',
+    headers:{ 'apikey':NUVOLA.chiave, 'Content-Type':'application/json' },
+    body: JSON.stringify({ refresh_token: sessione.rinnovo })
+  }).then(function(r){
+    if (!r.ok) { sessione = null; throw new Error('Sessione scaduta.'); }
+    return r.json();
+  }).then(function(d){
+    sessione = { token:d.access_token, rinnovo:d.refresh_token,
+                 scade:Date.now() + (d.expires_in || 3600) * 1000,
+                 uid:(d.user && d.user.id) || sessione.uid };
+  });
+}
+
+function nuvolaChiedi(percorso, opzioni){
+  opzioni = opzioni || {};
+  return sessioneViva().then(function(){
+    return fetch(nuvolaUrl(percorso), {
+      method: opzioni.metodo || 'GET',
+      headers: nuvolaTeste(opzioni.teste),
+      body: opzioni.corpo ? JSON.stringify(opzioni.corpo) : undefined
+    });
+  }).then(function(r){
+    if (r.status === 204) return null;
+    return r.text().then(function(t){
+      var d = null;
+      try { d = t ? JSON.parse(t) : null; } catch (e) { d = t; }
+      if (!r.ok) {
+        var m = (d && (d.message || d.msg || d.error_description || d.hint)) || ('errore ' + r.status);
+        var e2 = new Error(m); e2.stato = r.status; throw e2;
+      }
+      return d;
+    });
+  });
+}
+
+function leggiTabella(tabella, filtro){
+  return nuvolaChiedi('/rest/v1/' + tabella + '?select=*' + (filtro ? '&' + filtro : ''));
+}
+function scriviRighe(tabella, righe){
+  if (!righe.length) return Promise.resolve();
+  return nuvolaChiedi('/rest/v1/' + tabella, {
+    metodo:'POST', corpo:righe,
+    teste:{ 'Prefer':'resolution=merge-duplicates,return=minimal' }
+  });
+}
+function cancellaRighe(tabella, ids){
+  if (!ids.length) return Promise.resolve();
+  var lista = ids.map(function(x){ return '"' + x + '"'; }).join(',');
+  return nuvolaChiedi('/rest/v1/' + tabella + '?id=in.(' + lista + ')',
+    { metodo:'DELETE', teste:{ 'Prefer':'return=minimal' } });
+}
+
+/* ---- accesso ---- */
+
+function nuvolaAccedi(email, pw){
+  return fetch(nuvolaUrl('/auth/v1/token?grant_type=password'), {
+    method:'POST',
+    headers:{ 'apikey':NUVOLA.chiave, 'Content-Type':'application/json' },
+    body: JSON.stringify({ email:email, password:pw })
+  }).then(function(r){
+    return r.json().then(function(d){
+      if (!r.ok) {
+        var m = d.error_description || d.msg || 'Email o password non corrispondono.';
+        if (/confirm/i.test(m)) m = 'Utenza non ancora confermata: apri il messaggio che hai ricevuto.';
+        throw new Error(m);
+      }
+      return d;
+    });
+  }).then(function(d){
+    sessione = { token:d.access_token, rinnovo:d.refresh_token,
+                 scade:Date.now() + (d.expires_in || 3600) * 1000,
+                 uid:d.user.id };
+    return leggiTabella('profili', 'id=eq.' + d.user.id);
+  }).then(function(p){
+    if (!p || !p.length) {
+      sessione = null;
+      throw new Error('Utenza non abilitata. Chiedi al coordinatore di inserirti fra gli abilitati.');
+    }
+    return p[0];
+  });
+}
+
+function nuvolaRegistra(email, pw){
+  return fetch(nuvolaUrl('/auth/v1/signup'), {
+    method:'POST',
+    headers:{ 'apikey':NUVOLA.chiave, 'Content-Type':'application/json' },
+    body: JSON.stringify({ email:email, password:pw })
+  }).then(function(r){
+    return r.json().then(function(d){
+      if (!r.ok) throw new Error(d.msg || d.error_description || 'Registrazione non riuscita.');
+      return d;
+    });
+  });
+}
+
+function nuvolaEsci(){
+  var p = sessione
+    ? fetch(nuvolaUrl('/auth/v1/logout'), { method:'POST', headers:nuvolaTeste() }).catch(function(){})
+    : Promise.resolve();
+  sessione = null;
+  return p;
+}
+
+/* ---- dal database alla forma che l'applicazione gia' conosce ---- */
+
+function daRigaTurno(t){
+  return { id:t.id, data:t.data, inizio:t.inizio, fine:t.fine, location:t.location,
+           mansione:t.mansione, dipendente:t.dipendente, conferma:t.conferma || null,
+           deroga: !!t.deroga };
+}
+function aRigaTurno(t){
+  return { id:t.id, data:t.data, inizio:t.inizio, fine:t.fine, location:t.location,
+           mansione:t.mansione, dipendente:t.dipendente || null,
+           conferma:t.conferma || null, deroga: !!t.deroga };
+}
+function daRigaDocumento(x){
+  return { id:x.id, dipendente:x.dipendente, tipo:x.tipo, nome:x.nome,
+           file:x.percorso ? x.percorso.split('/').pop() : '', peso:x.peso || 0,
+           percorso:x.percorso || null, scadenza:x.scadenza || null, caricato:x.caricato };
+}
+function aRigaDocumento(x){
+  return { id:x.id, dipendente:x.dipendente, tipo:x.tipo, nome:x.nome,
+           percorso:x.percorso || null, peso:x.peso || 0,
+           scadenza:x.scadenza || null, caricato:x.caricato };
+}
+function daRigaCedolino(x){
+  return { id:x.id, dipendente:x.dipendente, mese:x.mese, letto:x.letto || null,
+           file:x.percorso ? x.percorso.split('/').pop() : '', peso:x.peso || 0,
+           percorso:x.percorso || null };
+}
+function aRigaCedolino(x){
+  return { id:x.id, dipendente:x.dipendente, mese:x.mese, letto:x.letto || null,
+           percorso:x.percorso || null, peso:x.peso || 0 };
+}
+function daRigaRichiesta(r){
+  return { id:r.id, dipendente:r.dipendente, tipo:r.tipo, dal:r.dal, al:r.al, nota:r.nota || '',
+           stato:r.stato, chiesto:r.chiesto, deciso:r.deciso || null, decisoIl:r.deciso_il || null };
+}
+function aRigaRichiesta(r){
+  return { id:r.id, dipendente:r.dipendente, tipo:r.tipo, dal:r.dal, al:r.al, nota:r.nota || '',
+           stato:r.stato, chiesto:r.chiesto, deciso:r.deciso || null, deciso_il:r.decisoIl || null };
+}
+
+/* ---- lettura di tutto quello a cui si ha diritto ---- */
+
+function caricaDaNuvola(){
+  var tabelle = ['profili','clienti','location','codici','esigenze','turni',
+                 'abilitazioni','documenti','cedolini','assenze','richieste',
+                 'impostazioni','registro','abilitati'];
+  return Promise.all(tabelle.map(function(t){
+    return leggiTabella(t).catch(function(){ return []; });   // il dipendente non vede tutto
+  })).then(function(r){
+    var m = {}; tabelle.forEach(function(t, i){ m[t] = r[i] || []; });
+
+    var abilPer = {};
+    m.abilitazioni.forEach(function(a){
+      (abilPer[a.dipendente] = abilPer[a.dipendente] || []).push({ t:a.tipo, s:a.scadenza, id:a.id });
+    });
+
+    var d = {
+      dipendenti: m.profili.filter(function(p){ return p.ruolo === 'dipendente'; }).map(function(p){
+        return { id:p.id, nome:p.nome, email:p.email, telefono:p.telefono || '', cf:p.cf || '',
+                 mansioni:p.mansioni || [], sedi:p.sedi || [], contratto:p.contratto || {},
+                 abil:abilPer[p.id] || [], nota:p.nota || '' };
+      }),
+      accessi: m.profili.filter(function(p){ return p.ruolo !== 'dipendente'; }).map(function(p){
+        return { id:p.id, nome:p.nome, email:p.email, ruolo:p.ruolo };
+      }),
+      clienti:  m.clienti.map(function(c){ return { id:c.id, nome:c.nome }; }),
+      location: m.location.map(function(l){
+        return { id:l.id, cliente:l.cliente, nome:l.nome, citta:l.citta,
+                 lat:l.lat, lng:l.lng, raggio:l.raggio }; }),
+      codici:   m.codici.map(function(c){ return { id:c.id, et:c.et, ini:c.ini, fin:c.fin, col:c.col }; }),
+      esigenze: m.esigenze.map(function(e){
+        return { id:e.id, location:e.location, cod:e.cod, mans:e.mans, giorni:e.giorni || [] }; }),
+      turni:    m.turni.map(daRigaTurno),
+      documenti:m.documenti.map(daRigaDocumento),
+      cedolini: m.cedolini.map(daRigaCedolino),
+      assenze:  m.assenze.map(function(a){
+        return { id:a.id, dipendente:a.dipendente, tipo:a.tipo, dal:a.dal, al:a.al, nota:a.nota || '' }; }),
+      richieste:m.richieste.map(daRigaRichiesta),
+      registro: m.registro.map(function(r){
+        return { q:r.quando, chi:r.chi, cosa:r.cosa, det:r.det || '' }; }),
+      abilitati:m.abilitati.map(function(a){
+        return { email:a.email, nome:a.nome, ruolo:a.ruolo }; }),
+      ui: (m.impostazioni[0] && m.impostazioni[0].ui && Object.keys(m.impostazioni[0].ui).length)
+            ? m.impostazioni[0].ui : uiDiPartenza(),
+      letture: {}
+    };
+    if (!d.codici.length)   d.codici = codiciDiPartenza();
+    return completa(d);
+  });
+}
+
+/* ---- scrittura: si manda solo quello che e' cambiato ---- */
+
+var specchio = null;
+
+function fotografa(d){
+  return JSON.stringify({
+    profili: d.dipendenti.map(function(x){
+      return { id:x.id, nome:x.nome, email:x.email, telefono:x.telefono, cf:x.cf,
+               mansioni:x.mansioni, sedi:x.sedi, contratto:x.contratto, nota:x.nota, ruolo:'dipendente' };
+    }).concat(d.accessi.map(function(x){
+      return { id:x.id, nome:x.nome, email:x.email, ruolo:x.ruolo };
+    })),
+    abilitazioni: [].concat.apply([], d.dipendenti.map(function(x){
+      return (x.abil || []).map(function(a){
+        return { id:a.id, dipendente:x.id, tipo:a.t, scadenza:a.s }; });
+    })),
+    clienti:d.clienti, location:d.location, codici:d.codici, esigenze:d.esigenze,
+    turni:d.turni.map(aRigaTurno),
+    documenti:d.documenti.map(aRigaDocumento),
+    cedolini:d.cedolini.map(aRigaCedolino),
+    assenze:d.assenze,
+    richieste:d.richieste.map(aRigaRichiesta),
+    ui:d.ui
+  });
+}
+
+function differenze(prima, dopo){
+  var lavori = [];
+  ['profili','abilitazioni','clienti','location','codici','esigenze',
+   'turni','documenti','cedolini','assenze','richieste'].forEach(function(t){
+    var a = {}, b = {};
+    (prima[t] || []).forEach(function(x){ if (x.id) a[x.id] = JSON.stringify(x); });
+    (dopo[t]  || []).forEach(function(x){ if (x.id) b[x.id] = x; });
+
+    var nuovi = Object.keys(b).filter(function(k){ return a[k] !== JSON.stringify(b[k]); })
+                             .map(function(k){ return b[k]; });
+    var via   = Object.keys(a).filter(function(k){ return !b[k]; });
+
+    // i profili non si creano da qui: nascono quando la persona si registra
+    if (t === 'profili') nuovi = nuovi.filter(function(x){
+      return (prima.profili || []).some(function(y){ return y.id === x.id; }); });
+
+    if (nuovi.length) lavori.push({ tabella:t, righe:nuovi });
+    if (via.length)   lavori.push({ tabella:t, via:via });
+  });
+  if (JSON.stringify(prima.ui) !== JSON.stringify(dopo.ui))
+    lavori.push({ tabella:'impostazioni', righe:[{ id:1, ui:dopo.ui }] });
+  return lavori;
+}
+
+var codaNuvola = Promise.resolve();
+
+function salvaInNuvola(){
+  if (!sessione || !D) return Promise.resolve();
+  var adesso = fotografa(D);
+  if (adesso === specchio) return Promise.resolve();
+  var prima = specchio ? JSON.parse(specchio) : {};
+  var dopo  = JSON.parse(adesso);
+  var lavori = differenze(prima, dopo);
+  specchio = adesso;
+
+  codaNuvola = codaNuvola.then(function(){
+    var catena = Promise.resolve();
+    lavori.forEach(function(l){
+      catena = catena.then(function(){
+        return l.via ? cancellaRighe(l.tabella, l.via) : scriviRighe(l.tabella, l.righe);
+      });
+    });
+    return catena;
+  }).catch(function(e){
+    specchio = null;   // al prossimo giro si riprova tutto
+    segnalaNuvola(e);
+  });
+  return codaNuvola;
+}
+
+function segnalaNuvola(e){
+  var b = document.getElementById('avviso');
+  if (!b) return;
+  b.hidden = false;
+  b.innerHTML = 'Archivio condiviso non raggiunto: <b>' + esc(e.message || 'errore di rete') +
+                '</b>. Le modifiche non sono state salvate, riprova fra poco.';
+}
+
+/* ---- i file nel deposito ---- */
+
+function nuvolaSalvaFile(percorso, file){
+  return sessioneViva().then(function(){
+    return fetch(nuvolaUrl('/storage/v1/object/fascicoli/' + percorso), {
+      method:'POST',
+      headers:{ 'apikey':NUVOLA.chiave, 'Authorization':'Bearer ' + sessione.token,
+                'Content-Type': file.type || 'application/octet-stream',
+                'x-upsert':'true' },
+      body: file
+    });
+  }).then(function(r){
+    if (!r.ok) return r.text().then(function(t){ throw new Error('caricamento non riuscito: ' + t.slice(0,120)); });
+    return percorso;
+  });
+}
+
+/* Il collegamento per scaricare dura pochi minuti e vale solo per chi lo chiede. */
+function nuvolaLeggiFile(percorso){
+  return nuvolaChiedi('/storage/v1/object/sign/fascicoli/' + percorso,
+                      { metodo:'POST', corpo:{ expiresIn: 120 } })
+    .then(function(d){
+      return fetch(nuvolaUrl('/storage/v1' + d.signedURL));
+    })
+    .then(function(r){
+      if (!r.ok) throw new Error('file non disponibile');
+      return r.blob();
+    });
+}
+
+function nuvolaEliminaFile(percorso){
+  return nuvolaChiedi('/storage/v1/object/fascicoli/' + percorso, { metodo:'DELETE' })
+    .catch(function(){});
+}
+
+
 /* ============ registro e blocco ============ */
 
 /* Registro delle operazioni: chi, quando, cosa. Serve a ricostruire i fatti
@@ -1075,8 +1440,14 @@ function abilitata(f){ return !D.ui || !D.ui.funzioni || D.ui.funzioni[f] !== fa
 var ultimaOperazione = null;
 function annota(chi, cosa, dettaglio){
   if (!D || !D.registro) return;
-  D.registro.push({ q:new Date().toISOString(), chi:chi, cosa:cosa, det:dettaglio || '' });
+  var riga = { q:new Date().toISOString(), chi:chi, cosa:cosa, det:dettaglio || '' };
+  D.registro.push(riga);
   if (D.registro.length > 500) D.registro = D.registro.slice(-500);
+  if (inNuvola() && sessione) {
+    nuvolaChiedi('/rest/v1/registro', { metodo:'POST',
+      corpo:[{ quando:riga.q, chi:riga.chi, cosa:riga.cosa, det:riga.det }],
+      teste:{ 'Prefer':'return=minimal' } }).catch(function(){});
+  }
 }
 function registraOperazione(){
   // salva() passa di qui: segna la vista su cui si stava lavorando, senza rumore
@@ -1104,6 +1475,7 @@ function blocca(motivo, messaggio){
   if (utente) annota(utente.email, motivo === 'uscita' ? 'uscita' : 'blocco automatico');
   var finale = salva();
   Promise.resolve(finale).then(function(){
+    if (inNuvola()) { nuvolaEsci(); specchio = null; }
     DEK = null; sbloccato = false; D = null; utente = null;
     if (orologioBlocco) clearTimeout(orologioBlocco);
     try { chiudi(); } catch (e) {}
@@ -1254,6 +1626,7 @@ var scritturePendenti = 0;
 function salva(){
   if (!sbloccato) return;
   registraOperazione();
+  if (inNuvola()) return salvaInNuvola();
   if (!CRITTOGRAFIA_DISPONIBILE) {
     try { localStorage.setItem(CHIAVE_ARCHIVIO, JSON.stringify({ v:0, chiaro:D })); } catch (e) {}
     return;
@@ -1319,9 +1692,15 @@ function conStore(modo, lavoro){
 
 var LIMITE_FILE = 12 * 1024 * 1024;   // 12 MB a documento
 
-function salvaFile(id, file){
-  if (!CRITTOGRAFIA_DISPONIBILE) return Promise.reject(new Error('crittografia non disponibile'));
+function salvaFile(id, file, idDip){
   if (file.size > LIMITE_FILE) return Promise.reject(new Error('file troppo grande'));
+  if (inNuvola()) {
+    // nel deposito ogni persona ha la sua cartella: e' da li' che le regole
+    // capiscono chi puo' scaricare cosa
+    var percorso = (idDip || 'comuni') + '/' + id + '-' + file.name.replace(/[^A-Za-z0-9._-]/g, '_');
+    return nuvolaSalvaFile(percorso, file).then(function(){ return percorso; });
+  }
+  if (!CRITTOGRAFIA_DISPONIBILE) return Promise.reject(new Error('crittografia non disponibile'));
   return file.arrayBuffer().then(function(buf){
     return cifra(DEK, buf).then(function(pacco){
       return conStore('readwrite', function(st){
@@ -1330,9 +1709,16 @@ function salvaFile(id, file){
                         peso:file.size, quando:new Date().toISOString() });
       });
     });
-  });
+  // in locale non esiste un percorso: il file si ritrova con il suo identificativo
+  }).then(function(){ return null; });
 }
-function leggiFile(id){
+function leggiFile(id, percorso){
+  if (inNuvola()) {
+    if (!percorso) return Promise.resolve(null);
+    return nuvolaLeggiFile(percorso).then(function(b){
+      return { blob:b, nome:percorso.split('/').pop(), tipo:b.type, peso:b.size };
+    }, function(){ return null; });
+  }
   return conStore('readonly', function(st){ return st.get(id); }).then(function(r){
     var rec = r && r.id ? r : (r && r.result);
     if (!rec) return null;
@@ -1341,7 +1727,10 @@ function leggiFile(id){
     });
   });
 }
-function eliminaFile(id){ return conStore('readwrite', function(st){ return st.delete(id); }); }
+function eliminaFile(id, percorso){
+  if (inNuvola()) return percorso ? nuvolaEliminaFile(percorso) : Promise.resolve();
+  return conStore('readwrite', function(st){ return st.delete(id); });
+}
 function pesoArchivioFile(){
   return conStore('readonly', function(st){ return st.getAll(); }).then(function(r){
     var tutti = Array.isArray(r) ? r : (r && r.result) || [];
@@ -1350,8 +1739,8 @@ function pesoArchivioFile(){
 }
 
 /* apre il file in una scheda nuova, o lo scarica se il browser non sa mostrarlo */
-function apriFileSalvato(id){
-  return leggiFile(id).then(function(f){
+function apriFileSalvato(id, percorso){
+  return leggiFile(id, percorso).then(function(f){
     if (!f) { apri('<h2>File non trovato</h2><p class="foglio__nota">Il documento non ha un file allegato, ' +
       'oppure e&rsquo; stato caricato su un altro dispositivo.</p>' +
       '<div class="azioni"><button class="b b--pri" id="ok">Chiudi</button></div>');
@@ -1519,11 +1908,17 @@ function elencoAccesso(){
       '<div class="errore" id="l-err" hidden></div>' +
       '<button class="b b--pri" id="l-vai" type="submit" style="width:100%">Accedi</button>' +
     '</form>' +
-    '<p class="accesso__nota">' + (CRITTOGRAFIA_DISPONIBILE
-      ? 'L&rsquo;archivio di questo dispositivo &egrave; cifrato. La password apre la chiave: ' +
-        'se si perde, i dati non sono recuperabili.'
-      : '<b>Attenzione:</b> questo browser non mette a disposizione la crittografia. ' +
-        'I dati resterebbero in chiaro: non inserire informazioni reali.') + '</p>';
+    (inNuvola()
+      ? '<p class="accesso__nota">Archivio condiviso. Se il coordinatore ti ha abilitato ma non ' +
+        'hai ancora una password, <a href="#" id="l-registra">registrati</a>.</p>'
+      : '<p class="accesso__nota">' + (CRITTOGRAFIA_DISPONIBILE
+          ? 'L&rsquo;archivio di questo dispositivo &egrave; cifrato. La password apre la chiave: ' +
+            'se si perde, i dati non sono recuperabili.'
+          : '<b>Attenzione:</b> questo browser non mette a disposizione la crittografia. ' +
+            'I dati resterebbero in chiaro: non inserire informazioni reali.') + '</p>');
+
+  var reg = document.getElementById('l-registra');
+  if (reg) reg.addEventListener('click', function(e){ e.preventDefault(); fogliaRegistrazione(); });
 
   var form = document.getElementById('login');
   form.addEventListener('submit', function(e){
@@ -1536,6 +1931,49 @@ function elencoAccesso(){
   });
 }
 
+/* Registrazione: vale solo per chi il coordinatore ha gia' abilitato.
+   Chi non e' nell'elenco riesce a registrarsi ma resta senza profilo, e
+   l'accesso glielo nega l'applicazione. */
+function fogliaRegistrazione(){
+  apri('<h2>Registrati</h2>' +
+    '<p class="foglio__nota">Serve che il coordinatore ti abbia gi&agrave; inserito fra gli abilitati, ' +
+      'con questo stesso indirizzo. La password te la scegli tu: nessuno pu&ograve; leggerla.</p>' +
+    '<label class="campo"><span>Email di lavoro</span>' +
+      '<input type="email" id="rg-mail" autocomplete="username" placeholder="nome@sicuryservizi.com"></label>' +
+    '<label class="campo"><span>Password</span>' +
+      '<input type="password" id="rg-pw" autocomplete="new-password"></label>' +
+    '<label class="campo"><span>Ripeti la password</span>' +
+      '<input type="password" id="rg-due" autocomplete="new-password"></label>' +
+    '<p class="foglio__nota">Almeno ' + LUNGHEZZA_MINIMA + ' caratteri.</p>' +
+    '<div class="errore" id="rg-err" hidden></div>' +
+    '<div class="azioni"><button class="b b--sec" id="annulla">Annulla</button>' +
+    '<button class="b b--pri" id="rg-ok">Registrati</button></div>');
+  document.getElementById('annulla').onclick = chiudi;
+  document.getElementById('rg-ok').onclick = function(){
+    var mail = document.getElementById('rg-mail').value.trim().toLowerCase();
+    var pw   = document.getElementById('rg-pw').value;
+    var due  = document.getElementById('rg-due').value;
+    var err  = document.getElementById('rg-err');
+    function stop(t){ err.hidden = false; err.innerHTML = t; }
+    if (!mail) return stop('<b>Manca l&rsquo;indirizzo.</b>');
+    if (pw.length < LUNGHEZZA_MINIMA) return stop('<b>Password troppo corta.</b> Servono almeno ' + LUNGHEZZA_MINIMA + ' caratteri.');
+    if (pw !== due) return stop('<b>Le due password non coincidono.</b>');
+    var b = document.getElementById('rg-ok');
+    b.disabled = true; b.textContent = 'Registro\u2026';
+    nuvolaRegistra(mail, pw).then(function(){
+      chiudi();
+      var e2 = document.getElementById('l-err');
+      if (e2) { e2.hidden = false;
+        e2.innerHTML = '<b>Registrazione inviata.</b> Se devi confermare l&rsquo;indirizzo trovi ' +
+                       'il messaggio nella tua casella. Poi entra da qui.'; }
+      var m2 = document.getElementById('l-mail'); if (m2) m2.value = mail;
+    }, function(e){
+      b.disabled = false; b.textContent = 'Registrati';
+      stop('<b>Registrazione non riuscita.</b> ' + esc(e.message || ''));
+    });
+  };
+}
+
 var tentativi = {};   // rallenta chi prova a indovinare
 
 function accedi(email, pw){
@@ -1544,6 +1982,27 @@ function accedi(email, pw){
     if (err) { err.hidden = false; err.innerHTML = testo; }
     return Promise.reject(new Error('accesso negato'));
   }
+
+  if (inNuvola()) {
+    var b = document.getElementById('l-vai');
+    return nuvolaAccedi(String(email || '').trim().toLowerCase(), pw)
+      .then(function(profilo){
+        return caricaDaNuvola().then(function(archivio){
+          D = archivio;
+          specchio = fotografa(D);
+          sbloccato = true;
+          if (err) err.hidden = true;
+          annota(profilo.email, 'accesso');
+          entra({ id:profilo.id, nome:profilo.nome, email:profilo.email },
+                profilo.ruolo === 'dipendente' ? 'dipendente' : profilo.ruolo);
+        });
+      })
+      .catch(function(x){
+        sessione = null; D = null; sbloccato = false;
+        return nega('<b>Accesso negato.</b> ' + esc(x.message || ''));
+      });
+  }
+
   if (!CRITTOGRAFIA_DISPONIBILE) return nega('<b>Crittografia non disponibile.</b> Apri il gestionale da un indirizzo https.');
 
   var e = String(email || '').toLowerCase();
@@ -2051,6 +2510,28 @@ function fogliaAzzera(){
   };
 }
 
+function fogliaCambiaModo(m){
+  if (m === modoArchivio()) return;
+  var verso = m === 'condiviso' ? 'archivio condiviso' : 'archivio di questo dispositivo';
+  apri('<h2>Passare all&rsquo;' + verso + '?</h2>' +
+    '<p class="foglio__nota">I due archivi restano separati: non si travasa niente dall&rsquo;uno ' +
+      'all&rsquo;altro. Si esce e si rientra.</p>' +
+    (m === 'condiviso'
+      ? '<div class="nota-riga">Nell&rsquo;archivio condiviso si entra con le utenze create su Supabase. ' +
+        'Se non ne hai ancora una, registrati dalla schermata di accesso: funziona solo se il ' +
+        'coordinatore ti ha gi&agrave; messo fra gli abilitati.</div>'
+      : '<div class="nota-riga">Tornerai all&rsquo;archivio cifrato di questo dispositivo, con i dati ' +
+        'che aveva l&rsquo;ultima volta.</div>') +
+    '<div class="azioni"><button class="b b--sec" id="annulla">Annulla</button>' +
+    '<button class="b b--pri" id="mo-ok">Cambia e esci</button></div>');
+  document.getElementById('annulla').onclick = chiudi;
+  document.getElementById('mo-ok').onclick = function(){
+    impostaModo(m);
+    chiudi();
+    blocca('cambio archivio', '<b>Archivio cambiato.</b> Entra con le credenziali dell&rsquo;' + verso + '.');
+  };
+}
+
 VISTE.sicurezza = function(){
   intesta('Sicurezza', 'Come sono protetti i dati di questo dispositivo e chi ha fatto cosa');
 
@@ -2100,6 +2581,21 @@ VISTE.sicurezza = function(){
         voce('all', 'Archivio centrale e copie di sicurezza',
           'I dati vivono solo in questo browser: non si condividono con gli altri dispositivi e non esiste un backup. Serve un archivio centrale.') +
       '</tbody></table></div></div>' +
+
+    '<div class="blocco blocco--' + (inNuvola() ? 'ok' : 'att') + '">' +
+      '<div class="blocco__testa"><h2>Dove vivono i dati</h2>' +
+      '<span class="p p--' + (inNuvola() ? 'ok' : 'att') + '">' +
+        (inNuvola() ? 'archivio condiviso' : 'solo questo dispositivo') + '</span></div>' +
+      '<div class="scelte">' +
+        '<button class="scelta' + (!inNuvola() ? ' scelta--on' : '') + '" data-modo="locale">' +
+          '<b>Su questo dispositivo</b><small>Archivio cifrato nel browser. Nessuno lo vede da fuori, ' +
+          'ma nemmeno gli altri dispositivi: va bene per provare, non per lavorare in due.</small></button>' +
+        '<button class="scelta' + (inNuvola() ? ' scelta--on' : '') + '" data-modo="condiviso">' +
+          '<b>Archivio condiviso</b><small>Database a Francoforte. Tutti vedono gli stessi dati, ' +
+          'le timbrature arrivano al coordinatore, e il database decide riga per riga chi vede cosa.</small></button>' +
+      '</div>' +
+      '<p class="vuoto">Cambiando archivio si esce e si rientra: i due archivi restano separati, ' +
+      'nulla passa dall&rsquo;uno all&rsquo;altro.</p></div>' +
 
     '<div class="blocco"><div class="blocco__testa"><h2>Copia di sicurezza</h2>' +
       '<div class="rapidi">' +
@@ -3974,7 +4470,7 @@ function agganciaAzioni(){
   v.querySelectorAll('[data-carica-doc]').forEach(function(b){ b.onclick = function(){ fogliaDocumento(b.dataset.caricaDoc); }; });
   v.querySelectorAll('[data-elimina-doc]').forEach(function(b){ b.onclick = function(){
     var x = D.documenti.filter(function(y){ return y.id === b.dataset.eliminaDoc; })[0];
-    if (x && x.file) eliminaFile(x.id).catch(function(){});
+    if (x && x.file) eliminaFile(x.id, x.percorso).catch(function(){});
     if (x) annota(utente.email, 'eliminazione documento', x.nome);
     D.documenti = D.documenti.filter(function(y){ return y.id !== b.dataset.eliminaDoc; });
     salva(); vaiA('fascicoli'); }; });
@@ -3985,8 +4481,10 @@ function agganciaAzioni(){
   v.querySelectorAll('[data-mappa]').forEach(function(b){ b.onclick = function(){ fogliaMappa(b.dataset.mappa); }; });
   v.querySelectorAll('[data-apri-file]').forEach(function(b){ b.onclick = function(){
     b.disabled = true; var t = b.textContent; b.textContent = 'Apro\u2026';
-    apriFileSalvato(b.dataset.apriFile).then(function(){ b.disabled = false; b.textContent = t; },
-                                             function(){ b.disabled = false; b.textContent = t; }); }; });
+    var rec = D.documenti.concat(D.cedolini).filter(function(x){ return x.id === b.dataset.apriFile; })[0];
+    apriFileSalvato(b.dataset.apriFile, rec && rec.percorso).then(
+      function(){ b.disabled = false; b.textContent = t; },
+      function(){ b.disabled = false; b.textContent = t; }); }; });
   v.querySelectorAll('[data-elimina-dip]').forEach(function(b){ b.onclick = function(){ confermaEliminaDip(b.dataset.eliminaDip); }; });
   v.querySelectorAll('[data-nuova-assenza]').forEach(function(b){ b.onclick = function(){ fogliaAssenza(b.dataset.nuovaAssenza); }; });
   v.querySelectorAll('[data-nuova-richiesta]').forEach(function(b){ b.onclick = fogliaRichiesta; });
@@ -3994,6 +4492,7 @@ function agganciaAzioni(){
   v.querySelectorAll('[data-esporta]').forEach(function(b){ b.onclick = fogliaEsporta; });
   v.querySelectorAll('[data-ripristina]').forEach(function(b){ b.onclick = fogliaRipristina; });
   v.querySelectorAll('[data-azzera]').forEach(function(b){ b.onclick = fogliaAzzera; });
+  v.querySelectorAll('[data-modo]').forEach(function(b){ b.onclick = function(){ fogliaCambiaModo(b.dataset.modo); }; });
   v.querySelectorAll('[data-decidi]').forEach(function(b){ b.onclick = function(){ fogliaDecisione(b.dataset.decidi); }; });
   v.querySelectorAll('[data-elimina-assenza]').forEach(function(b){ b.onclick = function(){
     D.assenze = D.assenze.filter(function(x){ return x.id !== b.dataset.eliminaAssenza; }); salva(); vaiA('fascicoli'); }; });
@@ -4149,8 +4648,9 @@ function fogliaDocumento(idDip){
 
     var b = document.getElementById('sal');
     b.disabled = true; b.textContent = f ? 'Cifro e salvo\u2026' : 'Salvo\u2026';
-    var lavoro = f ? salvaFile(id, f) : Promise.resolve();
-    lavoro.then(function(){
+    var lavoro = f ? salvaFile(id, f, idDip) : Promise.resolve(null);
+    lavoro.then(function(percorso){
+      if (percorso) voce.percorso = percorso;
       D.documenti.push(voce);
       annota(utente.email, 'caricamento documento', voce.tipo + ' di ' + d.nome);
       salva(); chiudi(); vaiA('fascicoli');
@@ -4191,10 +4691,11 @@ function fogliaCedolino(idDip){
     var id = 'p' + m + idDip;
     var b = document.getElementById('sal');
     b.disabled = true; b.textContent = f ? 'Cifro e salvo\u2026' : 'Salvo\u2026';
-    var lavoro = f ? salvaFile(id, f) : Promise.resolve();
-    lavoro.then(function(){
+    var lavoro = f ? salvaFile(id, f, idDip) : Promise.resolve(null);
+    lavoro.then(function(percorso){
       D.cedolini.push({ id:id, dipendente:idDip, mese:m, letto:null,
-                        file:f ? f.name : '', peso:f ? f.size : 0 });
+                        file:f ? f.name : '', peso:f ? f.size : 0,
+                        percorso:percorso || null });
       annota(utente.email, 'caricamento busta paga', mesePerEsteso(m) + ' di ' + dip(idDip).nome);
       salva(); chiudi(); vaiA('fascicoli');
     }, function(e){
@@ -4396,9 +4897,43 @@ function fogliaDipendente(id){
       return;
     }
 
+    // Con l'archivio condiviso la scheda non si crea da qui: si iscrive la
+    // persona fra gli abilitati, e il profilo nasce quando lei si registra
+    // con la propria email. Creare utenze dal browser richiederebbe una
+    // chiave di servizio, che nel browser non puo' stare.
+    if (nuovo && inNuvola()) {
+      var b2 = document.getElementById('salva-dip');
+      b2.disabled = true; b2.textContent = 'Abilito\u2026';
+      nuvolaChiedi('/rest/v1/abilitati', { metodo:'POST', teste:{ 'Prefer':'resolution=merge-duplicates,return=minimal' },
+        corpo:[{ email:mail.toLowerCase(), nome:nome, ruolo:'dipendente',
+                 telefono:d.telefono, cf:d.cf, mansioni:mans, sedi:sedi, contratto:d.contratto }] })
+        .then(function(){
+          annota(utente.email, 'abilitazione accesso', mail);
+          chiudi();
+          apri('<h2>' + esc(nome) + ' &egrave; abilitato</h2>' +
+            '<p class="foglio__nota">La scheda comparir&agrave; fra i dipendenti appena ' +
+              esc(nome.split(' ')[0]) + ' si sar&agrave; registrato.</p>' +
+            '<div class="nota-riga">Digli di aprire il gestionale e di registrarsi con ' +
+              '<b>' + esc(mail) + '</b>: la password se la sceglie da solo, e nessuno pu&ograve; leggerla.</div>' +
+            '<div class="azioni"><button class="b b--pri" id="ok">Chiudi</button></div>');
+          document.getElementById('ok').onclick = function(){ chiudi(); vaiA('fascicoli'); };
+        }, function(e){
+          b2.disabled = false; b2.textContent = 'Crea il dipendente';
+          err.hidden = false;
+          err.innerHTML = '<b>Non riesco ad abilitare l&rsquo;accesso.</b> ' + esc(e.message || '');
+        });
+      return;
+    }
+
     if (nuovo) { d.id = 'd' + Date.now().toString(36); D.dipendenti.push(d); }
 
-    // la busta della chiave va rifatta se cambia la password o l'email
+    // in locale la chiave sta in una busta: va rifatta se cambia password o email
+    if (inNuvola()) {
+      salva(); chiudi();
+      vaiA(VISTE[vistaAttuale] ? vistaAttuale : 'fascicoli');
+      return;
+    }
+
     var lavoro = Promise.resolve();
     if (pw) {
       if (emailVecchia && emailVecchia.toLowerCase() !== mail.toLowerCase()) togliUtenza(emailVecchia);
@@ -4698,7 +5233,7 @@ function confermaEliminaDip(idDip){
     D.assenze   = D.assenze.filter(function(x){ return x.dipendente !== idDip; });
     D.dipendenti = D.dipendenti.filter(function(x){ return x.id !== idDip; });
     togliUtenza(d.email);
-    doc.concat(ced).forEach(function(x){ if (x.file) eliminaFile(x.id).catch(function(){}); });
+    doc.concat(ced).forEach(function(x){ if (x.file) eliminaFile(x.id, x.percorso).catch(function(){}); });
     annota(utente.email, 'eliminazione dipendente', d.nome);
     if (fascicoloAperto === idDip) fascicoloAperto = null;
     salva(); chiudi(); vaiA(VISTE[vistaAttuale] ? vistaAttuale : 'fascicoli');
@@ -4857,7 +5392,7 @@ function scarica(idCed){
   var b = document.getElementById('scarica-ora');
   if (b) b.onclick = function(){
     b.disabled = true; b.textContent = 'Apro\u2026';
-    apriFileSalvato(p.id).then(function(){ chiudi(); vaiA('miecedolini'); },
+    apriFileSalvato(p.id, p.percorso).then(function(){ chiudi(); vaiA('miecedolini'); },
       function(){ b.disabled = false; b.textContent = 'Scarica il PDF'; });
   };
 }
