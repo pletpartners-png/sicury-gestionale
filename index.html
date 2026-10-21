@@ -4799,8 +4799,12 @@ function fogliaDipendente(id){
 
     '<h3 class="foglio__sez">Accesso al gestionale</h3>' +
     '<label class="campo"><span>Email di accesso</span><input id="n-mail" value="' + esc(d.email) + '" placeholder="giuliatoffoli@sicuryservizi.com"></label>' +
-    '<label class="campo"><span>' + (nuovo ? 'Password iniziale' : 'Reimposta la password') + '</span>' +
-      '<input id="n-pw" type="text" placeholder="' + (nuovo ? 'La cambier&agrave; al primo accesso' : 'Lascia vuoto per non cambiarla') + '"></label>' +
+    (inNuvola()
+      ? '<input id="n-pw" type="hidden" value="">' +
+        '<div class="nota-riga">La password non la imposti tu: la sceglie la persona registrandosi ' +
+        'con questo indirizzo. Cos&igrave; nessuno, nemmeno l&rsquo;amministratore, la conosce.</div>'
+      : '<label class="campo"><span>' + (nuovo ? 'Password iniziale' : 'Reimposta la password') + '</span>' +
+        '<input id="n-pw" type="text" placeholder="' + (nuovo ? 'La cambier&agrave; al primo accesso' : 'Lascia vuoto per non cambiarla') + '"></label>') +
 
     '<h3 class="foglio__sez">Contratto</h3>' +
     '<div class="duecol">' +
@@ -4879,7 +4883,8 @@ function fogliaDipendente(id){
 
     if (!nome || !mail) {
       err.hidden = false; err.innerHTML = '<b>Mancano dei dati.</b> Nome e email sono obbligatori.'; return; }
-    if (nuovo && !pw) {
+    // in archivio condiviso la password se la sceglie la persona registrandosi
+    if (nuovo && !pw && !inNuvola()) {
       err.hidden = false; err.innerHTML = '<b>Manca la password iniziale.</b> Serve al primo accesso.'; return; }
     var gia = D.dipendenti.concat(D.accessi).some(function(x){
       return x.email.toLowerCase() === mail.toLowerCase() && x.id !== d.id; });
