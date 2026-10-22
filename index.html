@@ -132,6 +132,9 @@ button,input,select{ font-family:inherit; font-size:inherit; color:inherit; }
   display:flex; flex-direction:column; gap:8px; }
 .accesso__stemma{ width:74px; height:auto; display:block; margin:0 auto 6px; }
 .accesso__box h2{ text-align:center; font-size:1.2rem; }
+.tema--archivio{ margin:0 0 14px; }
+.tema--archivio button{ font-family:var(--testo); font-size:.78rem; letter-spacing:0;
+  text-transform:none; padding:9px 6px; }
 .accesso__nota{ text-align:center; color:var(--smorzato); font-size:.88rem; margin-bottom:14px; }
 .accesso__scelte{ display:flex; flex-direction:column; gap:6px; }
 .utenza{ display:flex; align-items:center; gap:12px; padding:10px 12px; cursor:pointer;
@@ -1920,14 +1923,29 @@ function elencoAccesso(){
       '<div class="errore" id="l-err" hidden></div>' +
       '<button class="b b--pri" id="l-vai" type="submit" style="width:100%">Accedi</button>' +
     '</form>' +
+    /* La scelta dell'archivio va fatta prima di entrare: le credenziali
+       dell'uno non valgono per l'altro, e chi arriva col solo indirizzo
+       resterebbe chiuso fuori senza capire perche'. */
+    '<div class="tema tema--archivio" role="group" aria-label="Archivio">' +
+      '<button type="button" data-scegli-modo="condiviso"' + (inNuvola() ? ' aria-pressed="true"' : '') + '>Condiviso</button>' +
+      '<button type="button" data-scegli-modo="locale"' + (!inNuvola() ? ' aria-pressed="true"' : '') + '>Questo dispositivo</button>' +
+    '</div>' +
     (inNuvola()
-      ? '<p class="accesso__nota">Archivio condiviso. Se il coordinatore ti ha abilitato ma non ' +
-        'hai ancora una password, <a href="#" id="l-registra">registrati</a>.</p>'
+      ? '<p class="accesso__nota">Archivio condiviso dell&rsquo;azienda. Se il coordinatore ti ha ' +
+        'abilitato ma non hai ancora una password, <a href="#" id="l-registra">registrati</a>.</p>'
       : '<p class="accesso__nota">' + (CRITTOGRAFIA_DISPONIBILE
-          ? 'L&rsquo;archivio di questo dispositivo &egrave; cifrato. La password apre la chiave: ' +
-            'se si perde, i dati non sono recuperabili.'
+          ? 'Archivio di prova, solo su questo dispositivo e cifrato. ' +
+            'Per i dati dell&rsquo;azienda scegli <b>Condiviso</b>.'
           : '<b>Attenzione:</b> questo browser non mette a disposizione la crittografia. ' +
             'I dati resterebbero in chiaro: non inserire informazioni reali.') + '</p>');
+
+  document.querySelectorAll('[data-scegli-modo]').forEach(function(b){
+    b.addEventListener('click', function(){
+      if (b.dataset.scegliModo === modoArchivio()) return;
+      impostaModo(b.dataset.scegliModo);
+      elencoAccesso();
+    });
+  });
 
   var reg = document.getElementById('l-registra');
   if (reg) reg.addEventListener('click', function(e){ e.preventDefault(); fogliaRegistrazione(); });
