@@ -1944,8 +1944,10 @@ function elencoAccesso(){
       ? '<p class="accesso__nota">Archivio condiviso dell&rsquo;azienda. Se il coordinatore ti ha ' +
         'abilitato ma non hai ancora una password, <a href="#" id="l-registra">registrati</a>.</p>'
       : '<p class="accesso__nota">' + (CRITTOGRAFIA_DISPONIBILE
-          ? 'Archivio di prova, solo su questo dispositivo e cifrato. ' +
-            'Per i dati dell&rsquo;azienda scegli <b>Condiviso</b>.'
+          ? (ARCHIVIO_CONDIVISO_ATTIVO
+              ? 'Archivio di prova, solo su questo dispositivo e cifrato. ' +
+                'Per i dati dell&rsquo;azienda scegli <b>Condiviso</b>.'
+              : 'I dati di questo dispositivo sono cifrati: la password apre la chiave.')
           : '<b>Attenzione:</b> questo browser non mette a disposizione la crittografia. ' +
             'I dati resterebbero in chiaro: non inserire informazioni reali.') + '</p>');
 
