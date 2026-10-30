@@ -942,27 +942,27 @@ function semi() {
   }
 
   var dipendenti = [
-    P('d1','Marco Zanetti','marcozanetti@sicuryservizi.com','+39 340 118 2240','ZNTMRC88M14E473K',
+    P('d1','Marco Zanetti','marco','+39 340 118 2240','ZNTMRC88M14E473K',
       ['asc','steward','portierato'], ['l2','l4'], C('indeterminato',-980,null,40,'IV'),
       [{t:'elenco-prefettizio',s:fra(210)},{t:'antincendio',s:fra(64)}]),
-    P('d2','Elena Rossi','elenarossi@sicuryservizi.com','+39 347 905 6611','RSSLNE92T55L424P',
+    P('d2','Elena Rossi','elena','+39 347 905 6611','RSSLNE92T55L424P',
       ['reception','soccorso'], ['l4'], C('indeterminato',-1460,null,40,'V'),
       [{t:'primo-soccorso',s:fra(300)}]),
-    P('d3','Andrea Furlan','andreafurlan@sicuryservizi.com','+39 333 274 8109','FRLNDR85B19L483T',
+    P('d3','Andrea Furlan','andrea','+39 333 274 8109','FRLNDR85B19L483T',
       ['moviere','portierato'], ['l4','l5'], C('indeterminato',-2190,null,40,'IV'),
       [{t:'cantieri',s:fra(21)}]),
-    P('d4','Sara Bortolussi','sarabortolussi@sicuryservizi.com','+39 348 661 3027','BRTSRA95E58L424M',
+    P('d4','Sara Bortolussi','sara','+39 348 661 3027','BRTSRA95E58L424M',
       ['bagnino','soccorso'], ['l3'], C('stagionale',-150,180,24,'VI'),
       [{t:'brevetto-salvamento',s:fra(6)},{t:'primo-soccorso',s:fra(180)}]),
-    P('d5','Luca Deganutti','lucadeganutti@sicuryservizi.com','+39 331 442 7756','DGNLCU90L03E473B',
+    P('d5','Luca Deganutti','luca','+39 331 442 7756','DGNLCU90L03E473B',
       ['guardia','portierato'], ['l1'], C('indeterminato',-730,null,40,'IV'), []),
-    P('d6','Ivan Petrovic','ivanpetrovic@sicuryservizi.com','+39 327 880 1934','PTRVNI87R21Z149S',
+    P('d6','Ivan Petrovic','ivan','+39 327 880 1934','PTRVNI87R21Z149S',
       ['asc','guardia'], ['l1'], C('determinato',-300,120,40,'V'),
       [{t:'elenco-prefettizio',s:fra(-29)}]),
-    P('d7','Chiara Mattiussi','chiaramattiussi@sicuryservizi.com','+39 345 203 7718','MTTCHR97P62L424D',
+    P('d7','Chiara Mattiussi','chiara','+39 345 203 7718','MTTCHR97P62L424D',
       ['steward','soccorso'], ['l2','l3'], C('a chiamata',-420,null,20,'VI'),
       [{t:'primo-soccorso',s:fra(420)}]),
-    P('d8','Davide Snidero','davidesnidero@sicuryservizi.com','+39 340 559 2846','SNDDVD83C07L483F',
+    P('d8','Davide Snidero','davide','+39 340 559 2846','SNDDVD83C07L483F',
       ['ncc','guardia'], ['l1','l4'], C('indeterminato',-1825,null,40,'III'),
       [{t:'ncc',s:fra(500)}])
   ];
@@ -1027,8 +1027,8 @@ function semi() {
 
   // utenze di direzione
   var accessi = [
-    { id:'u-rosario',  nome:'Rosario Di Piazza', email:'rosariodipiazza@sicuryservizi.com',  ruolo:'amministratore' },
-    { id:'u-federico', nome:'Federico Plet',     email:'federicoplet@sicuryservizi.com', ruolo:'sviluppatore' }
+    { id:'u-rosario',  nome:'Rosario Di Piazza', email:'rosario',  ruolo:'amministratore' },
+    { id:'u-federico', nome:'Federico Plet',     email:'federico', ruolo:'sviluppatore' }
   ];
 
   // fabbisogno ricorrente: cosa va coperto, dove, con quale mansione
@@ -1594,24 +1594,26 @@ function leggiUtenze(){
 function scriviUtenze(u){
   try { localStorage.setItem(CHIAVE_UTENZE, JSON.stringify(u)); } catch (e) {}
 }
+function normalizzaUtente(x){ return String(x || '').trim().toLowerCase(); }
 function utenzaDi(email){
-  var e = String(email || '').toLowerCase();
-  return leggiUtenze().filter(function(x){ return x.email === e; })[0];
+  var e = normalizzaUtente(email);
+  return leggiUtenze().filter(function(x){ return normalizzaUtente(x.email) === e; })[0];
 }
 /* crea o aggiorna la busta di un account */
 function registraUtenza(email, pw, dek, deveCambiare){
   var sale = b64(caso(16));
   return chiaveDaPassword(pw, sale, GIRI_PBKDF2).then(function(kek){
     return avvolgi(kek, dek).then(function(busta){
-      var tutte = leggiUtenze().filter(function(x){ return x.email !== String(email).toLowerCase(); });
-      tutte.push({ email:String(email).toLowerCase(), sale:sale, giri:GIRI_PBKDF2,
+      var tutte = leggiUtenze().filter(function(x){ return normalizzaUtente(x.email) !== normalizzaUtente(email); });
+      tutte.push({ email:normalizzaUtente(email), sale:sale, giri:GIRI_PBKDF2,
                    busta:busta, cambia: !!deveCambiare });
       scriviUtenze(tutte);
     });
   });
 }
 function togliUtenza(email){
-  scriviUtenze(leggiUtenze().filter(function(x){ return x.email !== String(email).toLowerCase(); }));
+  var e = normalizzaUtente(email);
+  scriviUtenze(leggiUtenze().filter(function(x){ return normalizzaUtente(x.email) !== e; }));
 }
 
 /* ============ archivio ============ */
@@ -1814,8 +1816,8 @@ function preparaPrimoAvvio(){
 /* Le password di partenza servono solo a creare le buste al primo avvio:
    da quel momento vivono solo dentro gli involucri cifrati. */
 var PASSWORD_INIZIALI = {
-  'rosariodipiazza@sicuryservizi.com':  'Sicury!Presidio2026',
-  'federicoplet@sicuryservizi.com': 'Sicury!Sviluppo2026'
+  'rosario':  'Sicury!Presidio2026',
+  'federico': 'Sicury!Sviluppo2026'
 };
 var PASSWORD_DIPENDENTE = 'sicury2026';
 
@@ -1925,8 +1927,10 @@ function elencoAccesso(){
   box.querySelector('h2').textContent = (D && D.ui && D.ui.nome) || 'Sicury Turni';
   document.getElementById('accesso-scelte').innerHTML =
     '<form id="login" class="login" autocomplete="off">' +
-      '<label class="campo"><span>Email</span><input id="l-mail" type="email" ' +
-        'autocomplete="username" placeholder="nome@sicuryservizi.com" required></label>' +
+      '<label class="campo"><span>' + (ARCHIVIO_CONDIVISO_ATTIVO ? 'Email' : 'Nome utente') + '</span>' +
+        '<input id="l-mail" type="' + (ARCHIVIO_CONDIVISO_ATTIVO ? 'email' : 'text') + '" ' +
+        'autocomplete="username" autocapitalize="none" spellcheck="false" ' +
+        'placeholder="' + (ARCHIVIO_CONDIVISO_ATTIVO ? 'nome@sicuryservizi.com' : 'es. rosario') + '" required></label>' +
       '<label class="campo"><span>Password</span><input id="l-pw" type="password" ' +
         'autocomplete="current-password" required></label>' +
       '<div class="errore" id="l-err" hidden></div>' +
@@ -2047,13 +2051,13 @@ function accedi(email, pw){
 
   if (!CRITTOGRAFIA_DISPONIBILE) return nega('<b>Crittografia non disponibile.</b> Apri il gestionale da un indirizzo https.');
 
-  var e = String(email || '').toLowerCase();
+  var e = normalizzaUtente(email);
   var t = tentativi[e] || { n:0, fino:0 };
   if (Date.now() < t.fino) {
     return nega('<b>Troppi tentativi.</b> Riprova fra ' + Math.ceil((t.fino - Date.now())/1000) + ' secondi.');
   }
   var u = utenzaDi(e);
-  if (!u) return nega('<b>Accesso negato.</b> Email o password non corrispondono.');
+  if (!u) return nega('<b>Accesso negato.</b> Email o password non corrispondono.');   // solo archivio condiviso
 
   return chiaveDaPassword(pw, u.sale, u.giri)
     .then(function(kek){ return sfila(kek, u.busta); })
@@ -2077,7 +2081,8 @@ function accedi(email, pw){
       DEK = null; sbloccato = false;
       t.n++; if (t.n >= 5) { t.fino = Date.now() + 30000; t.n = 0; }
       tentativi[e] = t;
-      return nega('<b>Accesso negato.</b> Email o password non corrispondono.');
+      return nega('<b>Accesso negato.</b> ' + (ARCHIVIO_CONDIVISO_ATTIVO ? 'Email' : 'Nome utente') +
+                  ' o password non corrispondono.');
     });
 }
 
@@ -2365,7 +2370,7 @@ function scadenzeAperte(){
 
 /* ============ sicurezza ============ */
 
-var CONTI_PROVA = ['rosariodipiazza@sicuryservizi.com','federicoplet@sicuryservizi.com'];
+var CONTI_PROVA = ['rosario','federico'];
 
 function archivioDimostrativo(){
   return D.dipendenti.some(function(d){
@@ -4160,7 +4165,7 @@ function schedaFascicolo(d){
         '<button class="b b--sec b--min" data-scheda-dip="'+d.id+'">Modifica</button></div>' +
         '<div class="dati">' +
           '<div><span>Nome</span><b>'+esc(d.nome)+'</b></div>' +
-          '<div><span>Email di accesso</span><b>'+esc(d.email)+'</b></div>' +
+          '<div><span>' + (ARCHIVIO_CONDIVISO_ATTIVO ? 'Email di accesso' : 'Nome utente') + '</span><b>'+esc(d.email)+'</b></div>' +
           '<div><span>Telefono</span><b>'+(d.telefono ? esc(d.telefono) : '&mdash;')+'</b></div>' +
           '<div><span>Codice fiscale</span><b>'+(d.cf ? esc(d.cf) : '&mdash;')+'</b></div>' +
           '<div><span>Mansioni abilitate</span><b>'+(d.mansioni.length ? d.mansioni.map(function(m){ return mansione(m).nome; }).join(', ') : '&mdash;')+'</b></div>' +
@@ -4834,7 +4839,9 @@ function fogliaDipendente(id){
     '<label class="campo"><span>Codice fiscale</span><input id="n-cf" value="' + esc(d.cf || '') + '" placeholder="Facoltativo"></label>' +
 
     '<h3 class="foglio__sez">Accesso al gestionale</h3>' +
-    '<label class="campo"><span>Email di accesso</span><input id="n-mail" value="' + esc(d.email) + '" placeholder="giuliatoffoli@sicuryservizi.com"></label>' +
+    '<label class="campo"><span>' + (ARCHIVIO_CONDIVISO_ATTIVO ? 'Email di accesso' : 'Nome utente') + '</span>' +
+      '<input id="n-mail" autocapitalize="none" spellcheck="false" value="' + esc(d.email) + '" ' +
+      'placeholder="' + (ARCHIVIO_CONDIVISO_ATTIVO ? 'nome@sicuryservizi.com' : 'es. giulia') + '"></label>' +
     (inNuvola()
       ? '<input id="n-pw" type="hidden" value="">' +
         '<div class="nota-riga">La password non la imposti tu: la sceglie la persona registrandosi ' +
@@ -4918,7 +4925,9 @@ function fogliaDipendente(id){
     var sedi = [].slice.call(foglio.querySelectorAll('[data-sede]:checked')).map(function(i){ return i.value; });
 
     if (!nome || !mail) {
-      err.hidden = false; err.innerHTML = '<b>Mancano dei dati.</b> Nome e email sono obbligatori.'; return; }
+      err.hidden = false;
+      err.innerHTML = '<b>Mancano dei dati.</b> Nome e ' +
+        (ARCHIVIO_CONDIVISO_ATTIVO ? 'email' : 'nome utente') + ' sono obbligatori.'; return; }
     // in archivio condiviso la password se la sceglie la persona registrandosi
     if (nuovo && !pw && !inNuvola()) {
       err.hidden = false; err.innerHTML = '<b>Manca la password iniziale.</b> Serve al primo accesso.'; return; }
