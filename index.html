@@ -527,6 +527,27 @@ td small{ display:block; color:var(--smorzato); font-size:.78rem; }
   .comandi__dx .b{ flex:1; }
 }
 
+/* ---------- tendina di esportazione ---------- */
+.tendina{ position:relative; display:inline-block; }
+.tendina__menu{ position:absolute; right:0; top:calc(100% + 6px); z-index:40; min-width:230px;
+  background:var(--superficie); border:1px solid var(--linea); border-radius:11px;
+  box-shadow:var(--rilievo-alto); padding:5px; display:grid; gap:2px; }
+.tendina__menu[hidden]{ display:none; }
+.tendina__menu button{ display:block; width:100%; text-align:left; cursor:pointer;
+  background:none; border:0; border-radius:8px; padding:9px 11px;
+  font-family:var(--testo); font-size:.88rem; font-weight:600; color:var(--inchiostro); }
+.tendina__menu button small{ display:block; font-weight:400; font-size:.75rem;
+  color:var(--smorzato); margin-top:2px; }
+.tendina__menu button:hover, .tendina__menu button:focus-visible{ background:var(--oro-velo); color:var(--marchio); }
+.tendina__menu button:hover small{ color:var(--marchio); }
+@media (max-width:620px){
+  .tendina{ flex:1; }
+  .tendina > .b{ width:100%; }
+  /* il menu segue la larghezza del pulsante: con una larghezza minima
+     propria uscirebbe dal bordo destro dello schermo */
+  .tendina__menu{ left:0; right:auto; width:100%; min-width:0; }
+}
+
 /* ---------- legenda dei codici ---------- */
 .legenda{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
 .cod{ display:inline-flex; align-items:center; gap:7px; background:var(--superficie);
@@ -3803,7 +3824,14 @@ function schedaTurni(){
       '<span class="comandi__et">'+etichetta+'</span>' +
       '<div class="comandi__dx">' +
         (abilitata('stampa') ? '<button class="b b--sec b--min" id="stampa">Stampa</button>' : '') +
-        (abilitata('esporta') ? '<button class="b b--sec b--min" id="csv">Esporta</button>' : '') + '</div>' +
+        (abilitata('esporta')
+          ? '<div class="tendina">' +
+              '<button class="b b--sec b--min" id="csv" aria-haspopup="true" aria-expanded="false">Esporta &#9662;</button>' +
+              '<div class="tendina__menu" id="csv-menu" hidden>' +
+                '<button data-esporta-come="excel">Foglio di calcolo<small>si apre con Excel</small></button>' +
+                '<button data-esporta-come="pdf">PDF<small>dalla finestra di stampa scegli Salva come PDF</small></button>' +
+              '</div></div>'
+          : '') + '</div>' +
     '</div>' +
     legenda +
     '<div class="blocco"><div class="tabellone tabellone--griglia"><table class="griglia"><thead><tr><th>Dipendente</th>' +
@@ -3825,8 +3853,34 @@ function schedaTurni(){
     pianState.vincoli = document.getElementById('vincoli').value;
     generaTurni(giorni, pianState.vincoli);
   };
-  var bs = document.getElementById('stampa'); if (bs) bs.onclick = function(){ window.print(); };
-  var bc = document.getElementById('csv');    if (bc) bc.onclick = function(){ fogliaCsv(giorni); };
+  /* Stampare la pagina cosi' com'e' dava un foglio bianco: in stampa
+     l'applicazione si nasconde per lasciare spazio al documento, che pero'
+     nessuno aveva preparato. Ora si compone il prospetto del periodo. */
+  function prospettoDelPeriodo(){
+    return docProspetto(giorni[0], giorni[giorni.length - 1], '');
+  }
+  var bs = document.getElementById('stampa');
+  if (bs) bs.onclick = function(){ stampaDocumento(prospettoDelPeriodo()); };
+
+  var bc = document.getElementById('csv'), menu = document.getElementById('csv-menu');
+  if (bc && menu) {
+    bc.onclick = function(e){
+      e.stopPropagation();
+      var aperto = !menu.hidden;
+      menu.hidden = aperto;
+      bc.setAttribute('aria-expanded', String(!aperto));
+    };
+    addEventListener('click', function(){ if (menu && !menu.hidden) { menu.hidden = true; bc.setAttribute('aria-expanded','false'); } });
+    menu.querySelectorAll('[data-esporta-come]').forEach(function(b){
+      b.onclick = function(e){
+        e.stopPropagation();
+        menu.hidden = true; bc.setAttribute('aria-expanded','false');
+        if (b.dataset.esportaCome === 'pdf') { stampaDocumento(prospettoDelPeriodo()); return; }
+        var nome = 'prospetto-turni-' + giorni[0] + '_' + giorni[giorni.length-1] + '.csv';
+        if (!scaricaFile(nome, csvProspetto(giorni[0], giorni[giorni.length-1], ''))) fogliaCsv(giorni);
+      };
+    });
+  }
   agganciaAzioni();
 }
 
