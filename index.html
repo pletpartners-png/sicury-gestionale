@@ -265,8 +265,11 @@ button,input,select{ font-family:inherit; font-size:inherit; color:inherit; }
 table{ border-collapse:collapse; width:100%; min-width:540px; }
 th,td{ text-align:left; padding:10px 18px; border-bottom:1px solid var(--linea-tenue);
   font-size:.88rem; vertical-align:middle; }
+/* Le intestazioni usavano il grigio piu' tenue: sul fondo chiaro scendeva
+   a 2,95:1, sotto la soglia di leggibilita'. Col grigio medio sta sopra 4,5:1
+   in entrambi i temi, e resta comunque discreto rispetto al dato. */
 th{ font-family:var(--mono); font-size:.62rem; letter-spacing:.12em; text-transform:uppercase;
-  color:var(--tenue); font-weight:400; background:var(--superficie2); }
+  color:var(--smorzato); font-weight:500; background:var(--superficie2); }
 tbody tr:last-child td{ border-bottom:0; }
 tbody tr:hover{ background:var(--superficie2); }
 td b{ font-weight:650; }
@@ -444,7 +447,7 @@ td small{ display:block; color:var(--smorzato); font-size:.78rem; }
 .griglia th{ position:sticky; top:0; z-index:2; }
 .griglia thead th.oggi{ color:var(--marchio); background:var(--oro-velo);
   box-shadow:inset 0 -2px 0 var(--marchio); }
-.griglia thead th.festivo{ color:var(--tenue); background:var(--superficie2); }
+.griglia thead th.festivo{ color:var(--smorzato); background:var(--superficie2); }
 .griglia tbody td.oggi{ background:color-mix(in srgb, var(--oro-velo) 55%, transparent); }
 /* La colonna dei nomi eredita lo stile delle intestazioni: va riportata a
    testo normale, altrimenti il maiuscoletto spaziato spezza i cognomi. */
@@ -534,7 +537,7 @@ td small{ display:block; color:var(--smorzato); font-size:.78rem; }
 
 /* ---------- intestazioni dei giorni ---------- */
 .griglia thead th span{ display:block; font-family:var(--mono); font-size:.6rem;
-  letter-spacing:.1em; text-transform:uppercase; color:var(--tenue); }
+  letter-spacing:.1em; text-transform:uppercase; color:var(--smorzato); }
 .griglia thead th b{ display:block; font-family:var(--display);
   font-size:1.2rem; font-weight:700; letter-spacing:-.03em; margin-top:1px; }
 .griglia thead th.festivo{ color:var(--all); }
@@ -597,7 +600,7 @@ td small{ display:block; color:var(--smorzato); font-size:.78rem; }
   border-top:1px solid var(--linea-tenue); }
 .gio{ display:inline-block; font-family:var(--mono); font-size:.62rem; letter-spacing:.05em;
   padding:3px 6px; border-radius:4px; margin-right:3px;
-  background:var(--superficie2); color:var(--tenue); border:1px solid var(--linea); }
+  background:var(--superficie2); color:var(--smorzato); border:1px solid var(--linea); }
 .gio--on{ background:var(--marchio); color:var(--marchio-cont); border-color:var(--marchio); }
 .campo input[type="color"]{ height:40px; padding:4px; cursor:pointer; }
 
