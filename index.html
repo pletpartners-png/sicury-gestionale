@@ -1788,6 +1788,68 @@ function pesoLeggibile(b){
 
 /* Al primissimo avvio nasce l'archivio dimostrativo con le sue utenze.
    Un archivio vecchio in chiaro viene cifrato e poi cancellato. */
+/* Chi aveva gia' usato il gestionale si porta dietro le utenze vecchie, che
+   erano indirizzi di posta. Il passaggio ai nomi utente non puo' valere solo
+   per i dispositivi nuovi: su quelli vecchi le credenziali consegnate non
+   funzionerebbero, senza alcun modo di accorgersene.
+   Il nome non entra nella cifratura, quindi si rinomina e la password resta
+   quella di prima. */
+var NOMI_VECCHI = {
+  'rosariodipiazza@sicuryservizi.com': 'rosario',
+  'federicoplet@sicuryservizi.com':    'federico',
+  'marcozanetti@sicuryservizi.com':    'marco',
+  'elenarossi@sicuryservizi.com':      'elena',
+  'andreafurlan@sicuryservizi.com':    'andrea',
+  'sarabortolussi@sicuryservizi.com':  'sara',
+  'lucadeganutti@sicuryservizi.com':   'luca',
+  'ivanpetrovic@sicuryservizi.com':    'ivan',
+  'chiaramattiussi@sicuryservizi.com': 'chiara',
+  'davidesnidero@sicuryservizi.com':   'davide',
+  'giuliatoffoli@sicuryservizi.com':   'giulia',
+  // la primissima versione, prima ancora del dominio aziendale
+  'rosario@sicury.local':      'rosario',
+  'federico@sicury.local':     'federico',
+  'm.zanetti@sicury.local':    'marco',
+  'e.rossi@sicury.local':      'elena',
+  'a.furlan@sicury.local':     'andrea',
+  's.bortolussi@sicury.local': 'sara',
+  'l.deganutti@sicury.local':  'luca',
+  'i.petrovic@sicury.local':   'ivan',
+  'c.mattiussi@sicury.local':  'chiara',
+  'd.snidero@sicury.local':    'davide'
+};
+
+function rinominaUtenzeVecchie(){
+  if (ARCHIVIO_CONDIVISO_ATTIVO) return;     // li' gli indirizzi servono davvero
+  var tutte = leggiUtenze(), cambiata = false;
+  var nuove = tutte.map(function(u){
+    var n = NOMI_VECCHI[normalizzaUtente(u.email)];
+    if (!n) return u;
+    cambiata = true;
+    return Object.assign({}, u, { email:n });
+  });
+  // se per qualche motivo ne restassero due uguali, tengo la prima
+  var visti = {}, pulite = [];
+  nuove.forEach(function(u){
+    var k = normalizzaUtente(u.email);
+    if (visti[k]) { cambiata = true; return; }
+    visti[k] = true; pulite.push(u);
+  });
+  if (cambiata) scriviUtenze(pulite);
+  return cambiata;
+}
+
+/* Lo stesso vale dentro l'archivio, che pero' si apre solo dopo l'accesso. */
+function rinominaDentroArchivio(d){
+  if (ARCHIVIO_CONDIVISO_ATTIVO || !d) return false;
+  var cambiata = false;
+  [].concat(d.dipendenti || [], d.accessi || []).forEach(function(x){
+    var n = NOMI_VECCHI[normalizzaUtente(x.email)];
+    if (n) { x.email = n; cambiata = true; }
+  });
+  return cambiata;
+}
+
 function preparaPrimoAvvio(){
   if (!CRITTOGRAFIA_DISPONIBILE) return Promise.resolve();
   if (leggiUtenze().length) return Promise.resolve();
@@ -2068,8 +2130,9 @@ function accedi(email, pw){
     })
     .then(function(archivio){
       D = archivio;
-      var rec = D.accessi.filter(function(x){ return x.email.toLowerCase() === e; })[0];
-      var dd  = !rec && D.dipendenti.filter(function(x){ return x.email.toLowerCase() === e; })[0];
+      if (rinominaDentroArchivio(D)) salva();
+      var rec = D.accessi.filter(function(x){ return normalizzaUtente(x.email) === e; })[0];
+      var dd  = !rec && D.dipendenti.filter(function(x){ return normalizzaUtente(x.email) === e; })[0];
       if (!rec && !dd) { DEK = null; sbloccato = false; return nega('<b>Utenza non in archivio.</b> Avvisa l&rsquo;amministratore.'); }
       if (err) err.hidden = true;
       annota(e, 'accesso');
@@ -5463,7 +5526,7 @@ function scarica(idCed){
 /* Niente archivio in memoria finche' qualcuno non apre la cassaforte. */
 preparaPrimoAvvio()
   .catch(function(e){ console.warn('Preparazione archivio:', e && e.message); })
-  .then(function(){ elencoAccesso(); });
+  .then(function(){ rinominaUtenzeVecchie(); elencoAccesso(); });
 
 </script>
 </body>
