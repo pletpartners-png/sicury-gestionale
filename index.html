@@ -1089,8 +1089,17 @@ var NUVOLA = {
   chiave: 'sb_publishable_HPVxSDT4U80wL12E1zn5Dg_Jk1PzpSl'
 };
 
+/* L'archivio condiviso e' scritto e collaudato, ma non ancora in servizio:
+   manca il passaggio dei dati veri. Finche' questo e' false l'applicazione
+   lavora solo sull'archivio di questo dispositivo, la scelta non compare da
+   nessuna parte e un browser rimasto impostato su "condiviso" torna da solo
+   al locale, senza chiudere fuori nessuno.
+   Per attivarlo: mettere true, e nient'altro. */
+var ARCHIVIO_CONDIVISO_ATTIVO = false;
+
 var CHIAVE_MODO = 'sicury:modo';
 function modoArchivio(){
+  if (!ARCHIVIO_CONDIVISO_ATTIVO) return 'locale';
   try { return localStorage.getItem(CHIAVE_MODO) || 'locale'; } catch (e) { return 'locale'; }
 }
 function impostaModo(m){
@@ -1923,13 +1932,14 @@ function elencoAccesso(){
       '<div class="errore" id="l-err" hidden></div>' +
       '<button class="b b--pri" id="l-vai" type="submit" style="width:100%">Accedi</button>' +
     '</form>' +
-    /* La scelta dell'archivio va fatta prima di entrare: le credenziali
-       dell'uno non valgono per l'altro, e chi arriva col solo indirizzo
-       resterebbe chiuso fuori senza capire perche'. */
-    '<div class="tema tema--archivio" role="group" aria-label="Archivio">' +
-      '<button type="button" data-scegli-modo="condiviso"' + (inNuvola() ? ' aria-pressed="true"' : '') + '>Condiviso</button>' +
-      '<button type="button" data-scegli-modo="locale"' + (!inNuvola() ? ' aria-pressed="true"' : '') + '>Questo dispositivo</button>' +
-    '</div>' +
+    /* La scelta dell'archivio compare solo quando quello condiviso e' in
+       servizio: altrimenti sarebbe soltanto un modo per sbagliare. */
+    (ARCHIVIO_CONDIVISO_ATTIVO
+      ? '<div class="tema tema--archivio" role="group" aria-label="Archivio">' +
+          '<button type="button" data-scegli-modo="condiviso"' + (inNuvola() ? ' aria-pressed="true"' : '') + '>Condiviso</button>' +
+          '<button type="button" data-scegli-modo="locale"' + (!inNuvola() ? ' aria-pressed="true"' : '') + '>Questo dispositivo</button>' +
+        '</div>'
+      : '') +
     (inNuvola()
       ? '<p class="accesso__nota">Archivio condiviso dell&rsquo;azienda. Se il coordinatore ti ha ' +
         'abilitato ma non hai ancora una password, <a href="#" id="l-registra">registrati</a>.</p>'
@@ -2616,16 +2626,20 @@ VISTE.sicurezza = function(){
       '<div class="blocco__testa"><h2>Dove vivono i dati</h2>' +
       '<span class="p p--' + (inNuvola() ? 'ok' : 'att') + '">' +
         (inNuvola() ? 'archivio condiviso' : 'solo questo dispositivo') + '</span></div>' +
-      '<div class="scelte">' +
-        '<button class="scelta' + (!inNuvola() ? ' scelta--on' : '') + '" data-modo="locale">' +
-          '<b>Su questo dispositivo</b><small>Archivio cifrato nel browser. Nessuno lo vede da fuori, ' +
-          'ma nemmeno gli altri dispositivi: va bene per provare, non per lavorare in due.</small></button>' +
-        '<button class="scelta' + (inNuvola() ? ' scelta--on' : '') + '" data-modo="condiviso">' +
-          '<b>Archivio condiviso</b><small>Database a Francoforte. Tutti vedono gli stessi dati, ' +
-          'le timbrature arrivano al coordinatore, e il database decide riga per riga chi vede cosa.</small></button>' +
+      (ARCHIVIO_CONDIVISO_ATTIVO
+        ? '<div class="scelte">' +
+            '<button class="scelta' + (!inNuvola() ? ' scelta--on' : '') + '" data-modo="locale">' +
+              '<b>Su questo dispositivo</b><small>Archivio cifrato nel browser. Nessuno lo vede da fuori, ' +
+              'ma nemmeno gli altri dispositivi.</small></button>' +
+            '<button class="scelta' + (inNuvola() ? ' scelta--on' : '') + '" data-modo="condiviso">' +
+              '<b>Archivio condiviso</b><small>Database a Francoforte. Tutti vedono gli stessi dati, ' +
+              'e il database decide riga per riga chi vede cosa.</small></button>' +
+          '</div>' +
+          '<p class="vuoto">Cambiando archivio si esce e si rientra: i due restano separati.</p>'
+        : '<p class="vuoto">I dati stanno in questo dispositivo, cifrati. L&rsquo;archivio condiviso ' +
+          'in rete &egrave; pronto ma non ancora in servizio: si attiva quando si passa ai dati veri, ' +
+          'e da quel momento tutti vedranno gli stessi turni e le timbrature arriveranno al coordinatore.</p>') +
       '</div>' +
-      '<p class="vuoto">Cambiando archivio si esce e si rientra: i due archivi restano separati, ' +
-      'nulla passa dall&rsquo;uno all&rsquo;altro.</p></div>' +
 
     '<div class="blocco"><div class="blocco__testa"><h2>Copia di sicurezza</h2>' +
       '<div class="rapidi">' +
